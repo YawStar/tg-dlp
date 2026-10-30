@@ -1,6 +1,6 @@
 module tg-dlp
 
-go 1.27.2
+go 1.26.0
 
 require (
 	github.com/gotd/td v0.162.0

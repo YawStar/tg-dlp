@@ -3,10 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
-  contents: write  # Release တင်ဖို့အတွက် လိုအပ်ပါတယ်
+  contents: write # Release တင်ဖို့အတွက် လိုအပ်
 
 jobs:
   release:
@@ -16,12 +16,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # GoReleaser အတွက် Git history လိုအပ်ပါတယ်
+          fetch-depth: 0 # GoReleaser အတွက် Git history လိုအပ်
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.26"
           cache: true
 
       # ==========================================
@@ -31,7 +31,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: '~> v2'
+          version: "~> v2"
           # --skip=publish ကို သုံးပြီး GitHub Releases မှာ တင်တာကို ပိတ်ထား
           args: release --clean --skip=publish
         env:
@@ -45,7 +45,7 @@ jobs:
         with:
           name: tg-dlp-binaries
           path: dist/*
-          retention-days: 14  # ရက် ၁၄ ရက်အထိ သိမ်းထားမယ် (ကြိုက်သလို ပြောင်းနိုင်တယ်)
+          retention-days: 14 # ရက် ၁၄ ရက်အထိ သိမ်းထားမယ် (ကြိုက်သလို ပြောင်းနိုင်တယ်)
           if-no-files-found: error
 
       # ==========================================
