@@ -56,10 +56,11 @@ jobs:
           go-version: '1.23'
           cache: true
 
+      # ⭐ v6 နဲ့ v1.62 အစား v7 နဲ့ v2.1 ကို ပြောင်းလိုက်ပါပြီ ⭐
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: v1.62
+          version: v2.1
           args: --timeout=5m
 
   tidy:
