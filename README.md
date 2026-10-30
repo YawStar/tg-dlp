@@ -1,8 +1,8 @@
 <div id="top"></div>
 
-<img align="right" src="docs/assets/img/tg-dlp.png" width="250" alt="tg-dlp logo">
-
 # tg-dlp
+
+<img align="right" src="docs/assets/img/tg-dlp.png" width="250" alt="tg-dlp logo">
 
 **A fast, secure, and cross-platform Telegram media downloader.**
 

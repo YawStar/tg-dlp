@@ -1,8 +1,8 @@
 <div id="top"></div>
 
-<img align="right" src="docs/assets/img/tg-dlp.png" width="250" alt="tg-dlp logo">
-
 # tg-dlp
+
+<img align="right" src="docs/assets/img/tg-dlp.png" width="250" alt="tg-dlp logo">
 
 **မြန်ဆန်ပြီး လုံခြုံစိတ်ချရသော၊ စနစ်အားလုံးနှင့် အဆင်ပြေသည့် Telegram မီဒီယာ ဒေါင်းလုဒ်ဆွဲ ပရိုဂရမ်။**
 <p>
