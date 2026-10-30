@@ -2,6 +2,7 @@ version: 2
 
 project_name: tg-dlp
 
+# go mod tidy ကို ပိတ်ထားပါတယ် (Version မကိုက်ညီမှု Error မတက်အောင်)
 # before:
 #   hooks:
 #     - go mod tidy
@@ -32,13 +33,15 @@ builds:
         goarch: arm
     ldflags:
       - -s -w
-      - -X tg-dlp/pkg/runtime.Version={{.Version}}
+      # Version ကို runtime.go ကနေ ယူသုံးဖို့ ဖျက်ထားပါတယ်
+      # - -X tg-dlp/pkg/runtime.Version={{.Version}}
       - -X tg-dlp/pkg/runtime.Commit={{.FullCommit}}
       - -X tg-dlp/pkg/runtime.BuildTime={{.Date}}
 
 archives:
   - id: default
     formats: [tar.gz]
+    # ဖိုင်နာမည်မှာ Version မပါအောင် ပြင်ထားပါတယ် (Error မတက်အောင်)
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}macOS
@@ -73,7 +76,6 @@ changelog:
       - '^ci:'
       - '^chore:'
 
-release:
-  draft: false
-  prerelease: auto
-  name_template: "{{.ProjectName}} {{.Tag}}"
+# Tag မပါဘဲ --snapshot နဲ့ Run ရင် Error မတက်အောင် ဒါကို ထည့်ထားပါတယ်
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
