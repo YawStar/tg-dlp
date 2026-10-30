@@ -1,5 +1,4 @@
 <div id="top"></div>
-<div align="center">
 
 <img align="right" src="docs/assets/img/tg-dlp.png" width="250" alt="tg-dlp logo">
 
