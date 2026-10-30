@@ -1,0 +1,12 @@
+.git
+.github
+dist
+*.exe
+*.test
+README.md
+Makefile
+install.ps1
+install.sh
+.goreleaser.yaml
+.golangci.yml
+tools

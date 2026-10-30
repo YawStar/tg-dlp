@@ -1,0 +1,33 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+*.prof
+*.zip
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local config / sessions (NEVER commit)
+.env
+session.json
+*.enc
+*.cache
+*.part
+
+# Logs
+*.log
+
+# Local downloads
+/downloads/
+/exports/
