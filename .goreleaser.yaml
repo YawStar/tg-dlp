@@ -2,9 +2,9 @@ version: 2
 
 project_name: tg-dlp
 
-before:
-  hooks:
-    - go mod tidy
+# before:
+#   hooks:
+#     - go mod tidy
 
 builds:
   - id: tg-dlp
