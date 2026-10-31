@@ -258,6 +258,17 @@ tg-dlp/
     ├── runtime/          # Global Version၊ Flags၊ Debug အခြေအနေ
     └── telegram/         # Link ခွဲခြမ်းစိတ်ဖြာခြင်း၊ ဖိုင် Extension များ၊ API အထောက်အကူများ
 ```
+---
+
+## 💖 ဆော့ဖ်ဝဲရေးသားသူကို ပံ့ပိုးရန် (Support the Developer)
+
+ဤအက်ပ်သည် အသုံးဝင်သည်ဟု ယူဆပါက ဖွံ့ဖြိုးတိုးတက်မှုကို အောက်ပါအတိုင်း ပံ့ပိုးနိုင်ပါသည်-
+
+- ⭐ ဤ repository ကို Star ပေးပါ
+
+- 🐛 အမှားများကို သတင်းပို့ရန် သို့မဟုတ် [Issues](../../issues) မှတဆင့် အကြံပြုပါ
+
+- ❤️ [Donate](https://yawstardancebox.github.io/donate/) ပြုလုပ်ပါ
 
 ---
 

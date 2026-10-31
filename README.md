@@ -274,6 +274,16 @@ tg-dlp/
     ├── runtime/          # Global version, flags, debug state
     └── telegram/         # Link parsing, file extension mapping, API helpers
 ```
+---
+
+## 💖 Support the Developer
+
+If you find this app useful, consider supporting its development:
+
+- ⭐ Star this repository
+- 🐛 Report bugs or suggest features via [Issues](../../issues)
+- ❤️ [Donate](https://yawstardancebox.github.io/donate/)
+- 🌍 Help with translations
 
 ---
 
