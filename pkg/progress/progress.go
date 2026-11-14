@@ -16,6 +16,7 @@ type Writer struct {
 	start   time.Time
 	mu      sync.Mutex
 	last    time.Time
+	lastCurrent int64 // ⭐ Speed တွက်ဖို့ နောက်ဆုံး ရောက်ခဲ့တဲ့ နေရာ
 }
 
 // New creates a progress writer.
@@ -23,11 +24,12 @@ type Writer struct {
 func New(file *os.File, total, current int64) *Writer {
 	now := time.Now()
 	return &Writer{
-		file:    file,
-		total:   total,
-		current: current,
-		start:   now,
-		last:    now,
+		file:        file,
+		total:       total,
+		current:     current,
+		start:       now,
+		last:        now,
+		lastCurrent: current, // ⭐ စဖွင့်ချိန်မှာ ရှိပြီးသား ပမာဏ
 	}
 }
 
@@ -42,12 +44,17 @@ func (w *Writer) Write(p []byte) (int, error) {
 	now := time.Now()
 
 	if now.Sub(w.last) >= 500*time.Millisecond || (w.total > 0 && w.current == w.total) {
-		w.last = now
-		elapsed := now.Sub(w.start).Seconds()
+		elapsed := now.Sub(w.last).Seconds()
+		// ⭐ အရင်က ဆွဲထားတာကို မတွက်ဘဲ လက်ရှိ 500ms အတွင်း ဆွဲချလိုက်တဲ့ ပမာဏကိုပဲ တွက်မယ် ⭐
+		deltaBytes := w.current - w.lastCurrent
+		
 		if elapsed <= 0 {
 			elapsed = 0.001
 		}
-		speed := float64(w.current) / elapsed
+		speed := float64(deltaBytes) / elapsed
+
+		w.last = now
+		w.lastCurrent = w.current // ⭐ နောက်တစ်ခါ တွက်ဖို့ Update လုပ်မယ်
 
 		var percent float64
 		if w.total > 0 {
@@ -58,6 +65,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 		}
 
 		var eta string
+		// ETA တွက်တဲ့အခါ Speed က 0 ဖြစ်နေရင် Error မတက်အောင် ကာကွယ်မယ်
 		if w.total > 0 && speed > 0 {
 			etaSeconds := int(float64(w.total-w.current) / speed)
 			minutes := etaSeconds / 60
