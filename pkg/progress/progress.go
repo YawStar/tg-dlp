@@ -34,8 +34,48 @@ func New(file *os.File, total, current int64) *Writer {
 	}
 }
 
+// ⭐ downloader.go က ခေါ်သုံးဖို့ လက်ရှိ ပမာဏကို ပြန်ပေးမယ် ⭐
+func (w *Writer) Current() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.current
+}
+
+// ⭐ downloader.go က ခေါ်သုံးဖို့ စုစုပေါင်း ပမာဏကို ပြန်ပေးမယ် ⭐
+func (w *Writer) Total() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.total
+}
+
+// ⭐ downloader.go က ဖိုင်အခြေအနေကို စစ်ဆေးဖို့ ⭐
+func (w *Writer) File() *os.File {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.file
+}
+
 func (w *Writer) Write(p []byte) (int, error) {
-	n, err := w.file.Write(p)
+	w.mu.Lock()
+	// ⭐ ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ် ⭐
+	if w.total > 0 && w.current >= w.total {
+		w.mu.Unlock()
+		return len(p), nil // ပြည့်သွားရင် ဘာမှ မရေးတော့ဘူး
+	}
+
+	// ⭐ ကျန်တဲ့ နေရာကို တွက်မယ် ⭐
+	writeLen := len(p)
+	if w.total > 0 {
+		remaining := w.total - w.current
+		if int64(writeLen) > remaining {
+			writeLen = int(remaining) // ကျန်တဲ့ နေရာအထိပဲ ရေးမယ်
+		}
+	}
+
+	// ⭐ တွက်ထားတဲ့ အရှည်အတိုင်းပဲ ရေးမယ် ⭐
+	n, err := w.file.Write(p[:writeLen])
+	w.mu.Unlock()
+
 	if err != nil {
 		return n, err
 	}
@@ -45,7 +85,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 	now := time.Now()
 
 	// Progress Bar ကို 100ms တစ်ခါ Update လုပ်မယ်
-	if now.Sub(w.last) >= 100*time.Millisecond || (w.total > 0 && w.current == w.total) {
+	if now.Sub(w.last) >= 100*time.Millisecond || (w.total > 0 && w.current >= w.total) {
 		
 		// ⭐ ၂ စက္ကန့်ထက် ပိုကြာသွားရင် (Data မဝင်တော့ရင်) Speed ကို 0 ပြမယ် ⭐
 		if now.Sub(w.last) > 2*time.Second {
@@ -57,7 +97,6 @@ func (w *Writer) Write(p []byte) (int, error) {
 		deltaBytes := w.current - w.lastCurrent
 		if elapsed > 0 {
 			currentSpeed := float64(deltaBytes) / elapsed
-			// ဒီမှာ Speed ကို Update လုပ်မယ် (ဒါပေမယ့် Data မဝင်ရင် 0 ဖြစ်နေမှာပါ)
 			if currentSpeed > 0 {
 				w.lastSpeed = currentSpeed
 			}

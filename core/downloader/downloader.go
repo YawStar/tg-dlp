@@ -18,16 +18,19 @@ import (
 	"tg-dlp/pkg/telegram"
 )
 
+// Downloader wraps a gotd downloader for convenience.
 type Downloader struct {
 	Inner *downloader.Downloader
 }
 
+// New creates a downloader with a default retry handler.
 func New() *Downloader {
 	return &Downloader{
 		Inner: downloader.NewDownloader(),
 	}
 }
 
+// Filename Template ကို ပြောင်းပေးတဲ့ Helper
 func generateFilename(templateStr string, msgID int, ext string) string {
 	if templateStr == "" {
 		return fsutil.SanitizeFilename(fmt.Sprintf("media_%d%s", msgID, ext))
@@ -40,6 +43,8 @@ func generateFilename(templateStr string, msgID int, ext string) string {
 	}
 	return fsutil.SanitizeFilename(name)
 }
+
+// ---------- Output path helpers ----------
 
 func resolveOutputPaths(outputDir, safeName string, overwrite, skipSame bool, expectedSize int64) (outputPath, partPath string, skip bool) {
 	if overwrite {
@@ -78,41 +83,94 @@ func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 	return file, 0, nil
 }
 
-// ⭐ ဤနေရာတွင် Error ကို ပြပြီး Progress Bar ကို ရှင်းပစ်မယ် ⭐
-func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer) error {
-	maxRetries := 5
-	backoff := 2 * time.Second
+// ⭐ Connection ကျသွားရင် Auto-Resume လုပ်ပေးမယ့် Function ⭐
+func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64) error {
+	backoff := 1 * time.Second
+	attempt := 1
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		_, err := dl.Download(api, loc).WithThreads(16).Stream(ctx, w)
+	for {
+		// ⭐ ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ် ⭐
+		if expectedSize > 0 {
+			if info, err := w.File().Stat(); err == nil {
+				if info.Size() >= expectedSize {
+					return nil // ပြည့်သွားရင် ချက်ချင်း ရပ်မယ်
+				}
+			}
+		}
+
+		// ⭐ Stream အတွက် Timeout သတ်မှတ်မယ် (၃၀ စက္ကန့်) ⭐
+		streamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		
+		// ⭐ Stream ကို Run မယ် ⭐
+		_, err := dl.Download(api, loc).WithThreads(16).Stream(streamCtx, w)
+		
+		// ⭐ Stream ပြီးတာနဲ့ Timeout ကို ချက်ချင်း ပိတ်မယ် ⭐
+		cancel()
+
+		// Stream က အောင်မြင်သွားရင် ပြီးရော
 		if err == nil {
 			return nil
 		}
 
+		// Context Timeout ဖြစ်သွားရင် Error အသစ်တစ်ခု သတ်မှတ်မယ်
+		if streamCtx.Err() == context.DeadlineExceeded {
+			err = fmt.Errorf("stream timeout exceeded")
+		}
+
+		// ⭐ FLOOD_WAIT ဖြစ်ရင် စောင့်မယ် ⭐
 		if telegram.HandleFloodWait(err) {
 			continue
 		}
 
 		errStr := strings.ToLower(err.Error())
-		if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "-503") || strings.Contains(errStr, "connection reset") {
-			if attempt == maxRetries {
-				return fmt.Errorf("network failed after %d retries: %w", maxRetries, err)
+		
+		// ⭐ Network/Connection/Timeout Error မျိုးစုံကို ဖမ်းမယ် ⭐
+		isNetworkError := strings.Contains(errStr, "timeout") ||
+			strings.Contains(errStr, "deadline exceeded") ||
+			strings.Contains(errStr, "-503") ||
+			strings.Contains(errStr, "connection reset") ||
+			strings.Contains(errStr, "eof") ||
+			strings.Contains(errStr, "broken pipe") ||
+			strings.Contains(errStr, "connection refused") ||
+			strings.Contains(errStr, "no route to host") ||
+			strings.Contains(errStr, "i/o timeout") ||
+			strings.Contains(errStr, "transport is closing")
+
+		if isNetworkError {
+			// ⭐ ဖိုင်အရွယ်အစား ပြည့်သွားရင် ရပ်မယ် ⭐
+			if expectedSize > 0 {
+				if info, err := w.File().Stat(); err == nil {
+					if info.Size() >= expectedSize {
+						return nil
+					}
+				}
+			}
+
+			fmt.Printf("\n⚠ Network dropped at %s/%s. Retrying (attempt %d) in %v...\n",
+				progress.FormatSize(w.Current()),
+				progress.FormatSize(w.Total()),
+				attempt, backoff)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+				// စောင့်ပြီးသွားရင် ပြန်ဆက်မယ်
 			}
 			
-			// ⭐ Terminal ကို ရှင်းပြီး Error Message ကို ပြမယ် ⭐
-			fmt.Printf("\033[2K\r⚠ Network error (attempt %d/%d): %v\n", attempt, maxRetries, err)
-			fmt.Printf("⏳ Waiting %v before retrying...\n", backoff)
+			// စောင့်ချိန်ကို တဖြည်းဖြည်း တိုးမယ် (အများဆုံး ၁၀ စက္ကန့်ထိ)
+			if backoff < 10*time.Second {
+				backoff *= 2
+			}
 			
-			time.Sleep(backoff)
-			backoff *= 2
-			
-			// ⭐ Retry မလုပ်ခင် Progress Bar ကို ပြန်ဆွဲဖို့ နေရာချန်မယ် ⭐
 			fmt.Print("\033[2K\r")
+			attempt++
 			continue
 		}
+		
+		// တခြား Error တွေဆိုရင် ရပ်မယ်
 		return err
 	}
-	return nil
 }
 
 func extMatches(filterExts []string, ext string) bool {
@@ -210,7 +268,7 @@ func (d *Downloader) downloadDocument(ctx context.Context, api *tg.Client, media
 	startTime := time.Now()
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
@@ -251,7 +309,7 @@ func (d *Downloader) downloadDocumentQuiet(ctx context.Context, api *tg.Client, 
 
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
 	file.Close()
@@ -309,7 +367,7 @@ func (d *Downloader) downloadPhoto(ctx context.Context, api *tg.Client, media *t
 
 	startTime := time.Now()
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
@@ -361,7 +419,7 @@ func (d *Downloader) downloadPhotoQuiet(ctx context.Context, api *tg.Client, med
 	defer file.Close()
 
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
 	file.Close()
