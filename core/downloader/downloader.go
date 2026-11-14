@@ -18,23 +18,16 @@ import (
 	"tg-dlp/pkg/telegram"
 )
 
-// Downloader wraps a gotd downloader for convenience.
 type Downloader struct {
 	Inner *downloader.Downloader
 }
 
-// New creates a downloader with a default retry handler.
 func New() *Downloader {
 	return &Downloader{
-		Inner: downloader.NewDownloader().WithRetryHandler(
-			func(event downloader.RetryEvent) {
-				fmt.Printf("\n⚠ Temporary error (attempt %d): %v\n", event.Attempt, event.Err)
-			},
-		),
+		Inner: downloader.NewDownloader(),
 	}
 }
 
-// Filename Template ကို ပြောင်းပေးတဲ့ Helper
 func generateFilename(templateStr string, msgID int, ext string) string {
 	if templateStr == "" {
 		return fsutil.SanitizeFilename(fmt.Sprintf("media_%d%s", msgID, ext))
@@ -47,8 +40,6 @@ func generateFilename(templateStr string, msgID int, ext string) string {
 	}
 	return fsutil.SanitizeFilename(name)
 }
-
-// ---------- Output path helpers ----------
 
 func resolveOutputPaths(outputDir, safeName string, overwrite, skipSame bool, expectedSize int64) (outputPath, partPath string, skip bool) {
 	if overwrite {
@@ -87,22 +78,41 @@ func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 	return file, 0, nil
 }
 
+// ⭐ ဤနေရာတွင် Error ကို ပြပြီး Progress Bar ကို ရှင်းပစ်မယ် ⭐
 func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer) error {
-	for {
-		_, err := dl.Download(api, loc).Stream(ctx, w)
+	maxRetries := 5
+	backoff := 2 * time.Second
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		_, err := dl.Download(api, loc).WithThreads(16).Stream(ctx, w)
 		if err == nil {
 			return nil
 		}
+
 		if telegram.HandleFloodWait(err) {
 			continue
 		}
-		if strings.Contains(err.Error(), "Timeout") || strings.Contains(err.Error(), "-503") {
-			fmt.Println("\n⚠ Network timeout. Waiting 30s to retry...")
-			time.Sleep(30 * time.Second)
+
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "-503") || strings.Contains(errStr, "connection reset") {
+			if attempt == maxRetries {
+				return fmt.Errorf("network failed after %d retries: %w", maxRetries, err)
+			}
+			
+			// ⭐ Terminal ကို ရှင်းပြီး Error Message ကို ပြမယ် ⭐
+			fmt.Printf("\033[2K\r⚠ Network error (attempt %d/%d): %v\n", attempt, maxRetries, err)
+			fmt.Printf("⏳ Waiting %v before retrying...\n", backoff)
+			
+			time.Sleep(backoff)
+			backoff *= 2
+			
+			// ⭐ Retry မလုပ်ခင် Progress Bar ကို ပြန်ဆွဲဖို့ နေရာချန်မယ် ⭐
+			fmt.Print("\033[2K\r")
 			continue
 		}
 		return err
 	}
+	return nil
 }
 
 func extMatches(filterExts []string, ext string) bool {

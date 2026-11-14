@@ -6,21 +6,22 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"golang.org/x/term"
 )
 
-// Writer is an io.Writer that renders a live progress bar.
 type Writer struct {
-	file    *os.File
-	total   int64
-	current int64
-	start   time.Time
-	mu      sync.Mutex
-	last    time.Time
-	lastCurrent int64 // ⭐ Speed တွက်ဖို့ နောက်ဆုံး ရောက်ခဲ့တဲ့ နေရာ
+	file        *os.File
+	total       int64
+	current     int64
+	start       time.Time
+	mu          sync.Mutex
+	last        time.Time
+	lastCurrent int64
+	lastSpeed   float64
+	lastETA     string
 }
 
-// New creates a progress writer.
-// current is the byte offset already written (resume support).
 func New(file *os.File, total, current int64) *Writer {
 	now := time.Now()
 	return &Writer{
@@ -29,7 +30,7 @@ func New(file *os.File, total, current int64) *Writer {
 		current:     current,
 		start:       now,
 		last:        now,
-		lastCurrent: current, // ⭐ စဖွင့်ချိန်မှာ ရှိပြီးသား ပမာဏ
+		lastCurrent: current,
 	}
 }
 
@@ -43,18 +44,43 @@ func (w *Writer) Write(p []byte) (int, error) {
 	w.current += int64(n)
 	now := time.Now()
 
-	if now.Sub(w.last) >= 500*time.Millisecond || (w.total > 0 && w.current == w.total) {
-		elapsed := now.Sub(w.last).Seconds()
-		// ⭐ အရင်က ဆွဲထားတာကို မတွက်ဘဲ လက်ရှိ 500ms အတွင်း ဆွဲချလိုက်တဲ့ ပမာဏကိုပဲ တွက်မယ် ⭐
-		deltaBytes := w.current - w.lastCurrent
+	// Progress Bar ကို 100ms တစ်ခါ Update လုပ်မယ်
+	if now.Sub(w.last) >= 100*time.Millisecond || (w.total > 0 && w.current == w.total) {
 		
-		if elapsed <= 0 {
-			elapsed = 0.001
+		// ⭐ ၂ စက္ကန့်ထက် ပိုကြာသွားရင် (Data မဝင်တော့ရင်) Speed ကို 0 ပြမယ် ⭐
+		if now.Sub(w.last) > 2*time.Second {
+			w.lastSpeed = 0
+			w.lastETA = "--"
 		}
-		speed := float64(deltaBytes) / elapsed
+
+		elapsed := now.Sub(w.last).Seconds()
+		deltaBytes := w.current - w.lastCurrent
+		if elapsed > 0 {
+			currentSpeed := float64(deltaBytes) / elapsed
+			// ဒီမှာ Speed ကို Update လုပ်မယ် (ဒါပေမယ့် Data မဝင်ရင် 0 ဖြစ်နေမှာပါ)
+			if currentSpeed > 0 {
+				w.lastSpeed = currentSpeed
+			}
+		}
+
+		if now.Sub(w.start) >= 1*time.Second {
+			if w.total > 0 && w.lastSpeed > 0 {
+				etaSeconds := int(float64(w.total-w.current) / w.lastSpeed)
+				minutes := etaSeconds / 60
+				seconds := etaSeconds % 60
+				if minutes > 0 {
+					w.lastETA = fmt.Sprintf("%dm %ds", minutes, seconds)
+				} else {
+					w.lastETA = fmt.Sprintf("%ds", seconds)
+				}
+			} else {
+				w.lastETA = "--"
+			}
+			w.start = now
+		}
 
 		w.last = now
-		w.lastCurrent = w.current // ⭐ နောက်တစ်ခါ တွက်ဖို့ Update လုပ်မယ်
+		w.lastCurrent = w.current
 
 		var percent float64
 		if w.total > 0 {
@@ -62,21 +88,6 @@ func (w *Writer) Write(p []byte) (int, error) {
 			if percent > 100 {
 				percent = 100
 			}
-		}
-
-		var eta string
-		// ETA တွက်တဲ့အခါ Speed က 0 ဖြစ်နေရင် Error မတက်အောင် ကာကွယ်မယ်
-		if w.total > 0 && speed > 0 {
-			etaSeconds := int(float64(w.total-w.current) / speed)
-			minutes := etaSeconds / 60
-			seconds := etaSeconds % 60
-			if minutes > 0 {
-				eta = fmt.Sprintf("%dm %ds", minutes, seconds)
-			} else {
-				eta = fmt.Sprintf("%ds", seconds)
-			}
-		} else {
-			eta = "--"
 		}
 
 		barLength := 20
@@ -90,20 +101,28 @@ func (w *Writer) Write(p []byte) (int, error) {
 			}
 		}
 
+		var line string
 		if w.total > 0 {
-			fmt.Printf("\r[%s] %s %.1f%% | %s / %s | Speed: %s/s | ETA: %s",
+			line = fmt.Sprintf("[%s] %s %.1f%% | %s / %s | Speed: %s/s | ETA: %s",
 				filepath.Base(w.file.Name()), bar, percent,
-				FormatSize(w.current), FormatSize(w.total), FormatSize(int64(speed)), eta)
+				FormatSize(w.current), FormatSize(w.total), FormatSize(int64(w.lastSpeed)), w.lastETA)
 		} else {
-			fmt.Printf("\r[%s] Downloading: %s | Speed: %s/s",
-				filepath.Base(w.file.Name()), FormatSize(w.current), FormatSize(int64(speed)))
+			line = fmt.Sprintf("[%s] Downloading: %s | Speed: %s/s",
+				filepath.Base(w.file.Name()), FormatSize(w.current), FormatSize(int64(w.lastSpeed)))
 		}
+
+		width, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil || width <= 0 {
+			width = 80
+		}
+
+		fmt.Printf("\033[2K\r%-*s", width-1, line)
+		_ = os.Stdout.Sync()
 	}
 	w.mu.Unlock()
 	return n, nil
 }
 
-// FormatSize renders a byte count as a human-readable string.
 func FormatSize(b int64) string {
 	const unit = 1024
 	if b < unit {
