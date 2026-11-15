@@ -18,15 +18,35 @@ import (
 	"tg-dlp/pkg/telegram"
 )
 
-// Downloader wraps a gotd downloader for convenience.
-type Downloader struct {
-	Inner *downloader.Downloader
+// Options defines configuration parameters for the Downloader.
+type Options struct {
+	Concurrency int // တစ်ပြိုင်နက်တည်း ဒေါင်းလုပ်ဆွဲမည့် အရေအတွက် (Workers)
 }
 
-// New creates a downloader with a default retry handler.
+// Downloader wraps a gotd downloader for convenience.
+type Downloader struct {
+	Inner   *downloader.Downloader
+	Options Options
+}
+
+// New creates a downloader with default options.
 func New() *Downloader {
 	return &Downloader{
 		Inner: downloader.NewDownloader(),
+		Options: Options{
+			Concurrency: 3, // Default concurrency
+		},
+	}
+}
+
+// NewWithConfig creates a downloader with custom configuration options.
+func NewWithConfig(opts Options) *Downloader {
+	if opts.Concurrency <= 0 {
+		opts.Concurrency = 3
+	}
+	return &Downloader{
+		Inner:   downloader.NewDownloader(),
+		Options: opts,
 	}
 }
 
@@ -89,7 +109,6 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 	attempt := 1
 
 	for {
-		// ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ်
 		if expectedSize > 0 {
 			if info, err := w.File().Stat(); err == nil {
 				if info.Size() >= expectedSize {
@@ -98,21 +117,16 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 			}
 		}
 
-		// Download လုပ်ရာတွင် ကြီးမားသောဖိုင်များအတွက် timeout ကိုဖြုတ်ကာ ctx ကို တိုက်ရိုက်သုံးသည်
 		_, err := dl.Download(api, loc).WithThreads(8).Stream(ctx, w)
-
 		if err == nil {
 			return nil
 		}
 
-		// FLOOD_WAIT ဖြစ်ရင် စောင့်မယ်
 		if telegram.HandleFloodWait(err) {
 			continue
 		}
 
 		errStr := strings.ToLower(err.Error())
-
-		// Network/Connection/Timeout Error မျိုးစုံကို ဖမ်းမယ်
 		isNetworkError := strings.Contains(errStr, "timeout") ||
 			strings.Contains(errStr, "deadline exceeded") ||
 			strings.Contains(errStr, "-503") ||
@@ -428,7 +442,11 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 	var totalDownloaded, totalFailed int64
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 3)
+	workerLimit := d.Options.Concurrency
+	if workerLimit <= 0 {
+		workerLimit = 3
+	}
+	sem := make(chan struct{}, workerLimit)
 	var mu sync.Mutex
 
 	for {
@@ -464,7 +482,7 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				downloaded, skipReason, err := d.SingleMediaQuiet(ctx, api, m, m.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
+				downloaded, _, err := d.SingleMediaQuiet(ctx, api, m, m.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
 				mu.Lock()
 				defer mu.Unlock()
 
@@ -474,18 +492,13 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 				} else if downloaded {
 					totalDownloaded++
 					fmt.Printf("\n✅ Downloaded: media_%d\n", m.ID)
-				} else {
-					// ဖွင့်ထားတဲ့ log တွေ မများစေရန် ရှင်းလင်းထားသည်
-					_ = skipReason
 				}
 			}(msg)
 		}
 
-		// နောက်ဆုံး Message ID ကို ယူပြီး checkpoint သိမ်းမည်
 		lastMsgID := msgs[len(msgs)-1].ID
 		_ = os.WriteFile(checkpointFile, []byte(fmt.Sprintf("%d,%d", lastMsgID, totalScanned)), 0644)
 		
-		// အကယ်၍ အရင် offsetID နဲ့ တူနေရင် infinite loop မဖြစ်အောင် ရပ်မယ်
 		if offsetID == lastMsgID {
 			break
 		}
@@ -511,7 +524,12 @@ func (d *Downloader) ThreadMedia(ctx context.Context, api *tg.Client, targetChan
 	limit := 100
 	var totalDownloaded, totalFailed int64
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 3)
+	
+	workerLimit := d.Options.Concurrency
+	if workerLimit <= 0 {
+		workerLimit = 3
+	}
+	sem := make(chan struct{}, workerLimit)
 	var mu sync.Mutex
 
 	for {

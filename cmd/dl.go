@@ -28,6 +28,7 @@ Options:
   -d, --dir string       Output directory (Default: "downloads")
   -i, --filter string    Filter file types (e.g., mp4,mkv,mp3)
   -t, --template string  Filename template (e.g., "{id}_{ext}")
+  -c, --concurrency int  Number of concurrent workers for downloading (Default: 3)
   --takeout              Use Takeout Session to reduce rate limits
   --auto-join            Automatically join private channels
   --skip-same            Skip downloading if file already exists
@@ -49,6 +50,10 @@ Options:
 	dryRunPtr := dlCmd.Bool("dry-run", false, "List what would be downloaded without downloading")
 	proxyPtr := dlCmd.String("proxy", "", "Manual proxy URL")
 	noProxyPtr := dlCmd.Bool("no-proxy", false, "Do not use system proxy")
+
+	// Concurrency flag addition
+	concurrencyPtr := dlCmd.Int("concurrency", 3, "Number of concurrent workers for downloading")
+	dlCmd.IntVar(concurrencyPtr, "c", 3, "Number of concurrent workers for downloading")
 
 	templatePtr := dlCmd.String("t", "", "Filename template")
 	dlCmd.StringVar(templatePtr, "template", "", "Filename template")
@@ -81,7 +86,11 @@ Options:
 		return err
 	}
 
-	dl := downloader.New()
+	// Initialize downloader with custom concurrency options
+	dlOpts := downloader.Options{
+		Concurrency: *concurrencyPtr,
+	}
+	dl := downloader.NewWithConfig(dlOpts)
 
 	return cli.Run(context.Background(), func(ctx context.Context) error {
 		if err := client.CheckAuth(ctx, cli); err != nil {
@@ -129,7 +138,6 @@ func runDownloadLoop(ctx context.Context, api *tg.Client, links []string, outDir
 				continue
 			}
 		} else {
-			// fmt.Println("🔍 Fetching channel info...")
 			targetChannel, err = tgtg.FetchChannelByID(ctx, api, linkInfo.ChannelID)
 			if err != nil {
 				targetChannel = &tg.InputChannel{ChannelID: linkInfo.ChannelID, AccessHash: 0}
@@ -193,7 +201,7 @@ func runDownloadLoop(ctx context.Context, api *tg.Client, links []string, outDir
 			if err != nil {
 				fmt.Printf("❌ Error: %v\n", err)
 			} else if downloaded {
-				// fmt.Println("✅ Download complete!")
+				// Success
 			}
 		}
 	}

@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gotd/td/tg"
 	"tg-dlp/pkg/runtime"
 	tgtg "tg-dlp/pkg/telegram"
+
+	"github.com/gotd/td/tg"
 )
 
 // StringSlice is a flag.Value that collects repeated string flags.
@@ -67,6 +68,7 @@ Download Options:`)
 	fmt.Printf("  %s-d, --dir%s %sstring%s    Output directory (Default: \"downloads\")\n", cyan, reset, yellow, reset)
 	fmt.Printf("  %s-i, --filter%s %sstring%s Filter file types (e.g., mp4,mkv,mp3)\n", cyan, reset, yellow, reset)
 	fmt.Printf("  %s-t, --template%s %sstring%s  Filename template (e.g., \"{id}_{ext}\")\n", cyan, reset, yellow, reset)
+	fmt.Printf("  %s--concurrency%s %sint%s          Number of concurrent workers for downloading (Default: 3)\n", cyan, reset, yellow, reset)
 	fmt.Printf("  %s--takeout%s           Use Takeout Session to reduce rate limits\n", cyan, reset)
 	fmt.Printf("  %s--auto-join%s         Automatically join private channels\n", cyan, reset)
 	fmt.Printf("  %s--skip-same%s         Skip downloading if the file already exists\n", cyan, reset)
@@ -123,6 +125,7 @@ Global Options (Proxy & Debug):`)
 Examples:`)
 	fmt.Printf("  tg-dlp %sdl%s %s-u%s https://t.me/channel/123\n", green, reset, cyan, reset)
 	fmt.Printf("  tg-dlp %sdl%s %s-u%s https://t.me/channel/123 %s--proxy%s http://127.0.0.1:8080\n", green, reset, cyan, reset, cyan, reset)
+	fmt.Printf("  tg-dlp %sdl%s %s-u%s https://t.me/channel/123 %s--concurrency%s 5\n", green, reset, cyan, reset, cyan, reset)
 	fmt.Printf("  tg-dlp %sdl%s %s-u%s https://t.me/channel/123 %s--dry-run%s\n", green, reset, cyan, reset, cyan, reset)
 	fmt.Printf("  tg-dlp %sup%s %s-p%s ./video.mp4\n", green, reset, cyan, reset)
 	fmt.Printf("  tg-dlp %sexport%s %s-u%s https://t.me/channel/123 -l 500\n", green, reset, cyan, reset)
