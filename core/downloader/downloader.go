@@ -3,11 +3,14 @@ package downloader
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
@@ -20,7 +23,8 @@ import (
 
 // Options defines configuration parameters for the Downloader.
 type Options struct {
-	Concurrency int // တစ်ပြိုင်နက်တည်း ဒေါင်းလုပ်ဆွဲမည့် အရေအတွက် (Workers)
+	Concurrency int   // Concurrency (Workers)
+	LimitRate   int64 // Bytes per second (0 = unlimited)
 }
 
 // Downloader wraps a gotd downloader for convenience.
@@ -48,6 +52,21 @@ func NewWithConfig(opts Options) *Downloader {
 		Inner:   downloader.NewDownloader(),
 		Options: opts,
 	}
+}
+
+// rateLimitedReader wraps an io.Reader with a token bucket rate limiter.
+type rateLimitedReader struct {
+	r   io.Reader
+	lim *rate.Limiter
+}
+
+func (lr *rateLimitedReader) Read(p []byte) (int, error) {
+	n, err := lr.r.Read(p)
+	if n > 0 {
+		ctx := context.Background()
+		_ = lr.lim.WaitN(ctx, n)
+	}
+	return n, err
 }
 
 // Filename Template ကို ပြောင်းပေးတဲ့ Helper
@@ -87,14 +106,21 @@ func resolveOutputPaths(outputDir, safeName string, overwrite, skipSame bool, ex
 
 func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 	if info, err := os.Stat(partPath); err == nil {
-		file, err := os.OpenFile(partPath, os.O_APPEND|os.O_WRONLY, 0644)
+		// os.O_APPEND ကို ဖြုတ်ပြီး os.O_RDWR ကို သုံးပါမယ်
+		file, err := os.OpenFile(partPath, os.O_RDWR, 0644)
 		if err != nil {
 			return nil, 0, fmt.Errorf("cannot open part file: %w", err)
 		}
-		if verbose {
-			runtime.DebugLog("🔄 Resuming file: %s from %.2f MB", filepath.Base(partPath), float64(info.Size())/(1024*1024))
+		// ရှိပြီးသား size အတိုင်း offset ကို နေရာချပေးပါမယ်
+		size := info.Size()
+		if _, err := file.Seek(size, 0); err != nil {
+			file.Close()
+			return nil, 0, fmt.Errorf("cannot seek part file: %w", err)
 		}
-		return file, info.Size(), nil
+		if verbose {
+			runtime.DebugLog("🔄 Resuming file: %s from %.2f MB", filepath.Base(partPath), float64(size)/(1024*1024))
+		}
+		return file, size, nil
 	}
 	file, err := os.Create(partPath)
 	if err != nil {
@@ -104,7 +130,7 @@ func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 }
 
 // ---------- Stream with Retry ----------
-func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64) error {
+func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64, limitRate int64) error {
 	backoff := 1 * time.Second
 	attempt := 1
 
@@ -117,7 +143,14 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 			}
 		}
 
-		_, err := dl.Download(api, loc).WithThreads(8).Stream(ctx, w)
+		// Apply rate limiting wrapper if limitRate > 0
+		var targetWriter io.Writer = w
+		if limitRate > 0 {
+			limiter := rate.NewLimiter(rate.Limit(limitRate), int(limitRate))
+			targetWriter = &rateLimitedWriter{w: w, lim: limiter}
+		}
+
+		_, err := dl.Download(api, loc).WithThreads(8).Stream(ctx, targetWriter)
 		if err == nil {
 			return nil
 		}
@@ -165,6 +198,20 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 
 		return err
 	}
+}
+
+// rateLimitedWriter wraps an io.Writer with a token bucket rate limiter for stream downloads
+type rateLimitedWriter struct {
+	w   io.Writer
+	lim *rate.Limiter
+}
+
+func (lw *rateLimitedWriter) Write(p []byte) (int, error) {
+	ctx := context.Background()
+	if err := lw.lim.WaitN(ctx, len(p)); err != nil {
+		return 0, err
+	}
+	return lw.w.Write(p)
 }
 
 func extMatches(filterExts []string, ext string) bool {
@@ -249,7 +296,7 @@ func (d *Downloader) downloadDocument(ctx context.Context, api *tg.Client, media
 	startTime := time.Now()
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size, d.Options.LimitRate); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
@@ -289,7 +336,7 @@ func (d *Downloader) downloadDocumentQuiet(ctx context.Context, api *tg.Client, 
 
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size, d.Options.LimitRate); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
 	_ = file.Close()
@@ -338,7 +385,7 @@ func (d *Downloader) downloadPhoto(ctx context.Context, api *tg.Client, media *t
 
 	startTime := time.Now()
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size), d.Options.LimitRate); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
@@ -389,7 +436,7 @@ func (d *Downloader) downloadPhotoQuiet(ctx context.Context, api *tg.Client, med
 	defer file.Close()
 
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size), d.Options.LimitRate); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
 	_ = file.Close()

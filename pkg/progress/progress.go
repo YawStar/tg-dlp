@@ -34,45 +34,50 @@ func New(file *os.File, total, current int64) *Writer {
 	}
 }
 
-// ⭐ downloader.go က ခေါ်သုံးဖို့ လက်ရှိ ပမာဏကို ပြန်ပေးမယ် ⭐
 func (w *Writer) Current() int64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.current
 }
 
-// ⭐ downloader.go က ခေါ်သုံးဖို့ စုစုပေါင်း ပမာဏကို ပြန်ပေးမယ် ⭐
 func (w *Writer) Total() int64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.total
 }
 
-// ⭐ downloader.go က ဖိုင်အခြေအနေကို စစ်ဆေးဖို့ ⭐
 func (w *Writer) File() *os.File {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.file
 }
 
+// Helper to truncate long filenames for display
+func truncateFilename(name string, maxLen int) string {
+	if len(name) <= maxLen {
+		return name
+	}
+	if maxLen < 3 {
+		return name[:maxLen]
+	}
+	return name[:maxLen-3] + "..."
+}
+
 func (w *Writer) Write(p []byte) (int, error) {
 	w.mu.Lock()
-	// ⭐ ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ် ⭐
 	if w.total > 0 && w.current >= w.total {
 		w.mu.Unlock()
-		return len(p), nil // ပြည့်သွားရင် ဘာမှ မရေးတော့ဘူး
+		return len(p), nil
 	}
 
-	// ⭐ ကျန်တဲ့ နေရာကို တွက်မယ် ⭐
 	writeLen := len(p)
 	if w.total > 0 {
 		remaining := w.total - w.current
 		if int64(writeLen) > remaining {
-			writeLen = int(remaining) // ကျန်တဲ့ နေရာအထိပဲ ရေးမယ်
+			writeLen = int(remaining)
 		}
 	}
 
-	// ⭐ တွက်ထားတဲ့ အရှည်အတိုင်းပဲ ရေးမယ် ⭐
 	n, err := w.file.Write(p[:writeLen])
 	w.mu.Unlock()
 
@@ -84,10 +89,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 	w.current += int64(n)
 	now := time.Now()
 
-	// Progress Bar ကို 100ms တစ်ခါ Update လုပ်မယ်
 	if now.Sub(w.last) >= 100*time.Millisecond || (w.total > 0 && w.current >= w.total) {
-		
-		// ⭐ ၂ စက္ကန့်ထက် ပိုကြာသွားရင် (Data မဝင်တော့ရင်) Speed ကို 0 ပြမယ် ⭐
 		if now.Sub(w.last) > 2*time.Second {
 			w.lastSpeed = 0
 			w.lastETA = "--"
@@ -140,14 +142,26 @@ func (w *Writer) Write(p []byte) (int, error) {
 			}
 		}
 
+		displayName := truncateFilename(filepath.Base(w.file.Name()), 25)
+
 		var line string
 		if w.total > 0 {
-			line = fmt.Sprintf("[%s] %s %.1f%% | %s / %s | Speed: %s/s | ETA: %s",
-				filepath.Base(w.file.Name()), bar, percent,
-				FormatSize(w.current), FormatSize(w.total), FormatSize(int64(w.lastSpeed)), w.lastETA)
+			// အရောင်များ ခွဲခြားသတ်မှတ်ထားခြင်း (ANSI Escape Codes)
+			// Percentage: အစိမ်းရောင် (\033[32m)
+			// File Size: အပြာနုရောင် (\033[36m)
+			// Speed: ခရမ်းရောင်/ပန်းရောင် (\033[35m)
+			// ETA: အဝါရောင် (\033[33m)
+			percentStr := fmt.Sprintf("\033[32m%.1f%%\033[0m", percent)
+			sizeStr := fmt.Sprintf("\033[36m%s / %s\033[0m", FormatSize(w.current), FormatSize(w.total))
+			speedStr := fmt.Sprintf("\033[35m%s/s\033[0m", FormatSize(int64(w.lastSpeed)))
+			etaStr := fmt.Sprintf("\033[33m%s\033[0m", w.lastETA)
+
+			line = fmt.Sprintf("[%s] %s %s | %s | Speed: %s | ETA: %s",
+				displayName, bar, percentStr, sizeStr, speedStr, etaStr)
 		} else {
-			line = fmt.Sprintf("[%s] Downloading: %s | Speed: %s/s",
-				filepath.Base(w.file.Name()), FormatSize(w.current), FormatSize(int64(w.lastSpeed)))
+			speedStr := fmt.Sprintf("\033[35m%s/s\033[0m", FormatSize(int64(w.lastSpeed)))
+			line = fmt.Sprintf("[%s] Downloading: \033[36m%s\033[0m | Speed: %s",
+				displayName, FormatSize(w.current), speedStr)
 		}
 
 		width, _, err := term.GetSize(int(os.Stdout.Fd()))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,33 @@ import (
 	"tg-dlp/pkg/runtime"
 	tgtg "tg-dlp/pkg/telegram"
 )
+
+// parseSize parses human-readable rate strings like "500K", "2M", "1024" into bytes per second (int64)
+func parseSize(s string) int64 {
+	s = strings.TrimSpace(strings.ToUpper(s))
+	if s == "" {
+		return 0
+	}
+
+	multiplier := int64(1)
+	if strings.HasSuffix(s, "K") {
+		multiplier = 1024
+		s = strings.TrimSuffix(s, "K")
+	} else if strings.HasSuffix(s, "M") {
+		multiplier = 1024 * 1024
+		s = strings.TrimSuffix(s, "M")
+	} else if strings.HasSuffix(s, "G") {
+		multiplier = 1024 * 1024 * 1024
+		s = strings.TrimSuffix(s, "G")
+	}
+
+	val, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+
+	return val * multiplier
+}
 
 // RunDownloadCmd implements the "download"/"dl" command.
 func RunDownloadCmd(args []string, appID int, appHash, sessionPath string) error {
@@ -29,6 +57,7 @@ Options:
   -i, --filter string    Filter file types (e.g., mp4,mkv,mp3)
   -t, --template string  Filename template (e.g., "{id}_{ext}")
   -c, --concurrency int  Number of concurrent workers for downloading (Default: 3)
+  -r, --limit-rate string Download speed limit (e.g., 500K, 1M)
   --takeout              Use Takeout Session to reduce rate limits
   --auto-join            Automatically join private channels
   --skip-same            Skip downloading if file already exists
@@ -54,6 +83,10 @@ Options:
 	// Concurrency flag addition
 	concurrencyPtr := dlCmd.Int("concurrency", 3, "Number of concurrent workers for downloading")
 	dlCmd.IntVar(concurrencyPtr, "c", 3, "Number of concurrent workers for downloading")
+
+	// Limit Rate flag addition
+	limitRatePtr := dlCmd.String("limit-rate", "", "Download speed limit (e.g., 500K, 1M)")
+	dlCmd.StringVar(limitRatePtr, "r", "", "Download speed limit (shorthand)")
 
 	templatePtr := dlCmd.String("t", "", "Filename template")
 	dlCmd.StringVar(templatePtr, "template", "", "Filename template")
@@ -86,9 +119,13 @@ Options:
 		return err
 	}
 
-	// Initialize downloader with custom concurrency options
+	// Parse limit-rate string to bytes per second
+	limitBytes := parseSize(*limitRatePtr)
+
+	// Initialize downloader with custom concurrency and limit rate options
 	dlOpts := downloader.Options{
 		Concurrency: *concurrencyPtr,
+		LimitRate:   limitBytes,
 	}
 	dl := downloader.NewWithConfig(dlOpts)
 
@@ -205,6 +242,6 @@ func runDownloadLoop(ctx context.Context, api *tg.Client, links []string, outDir
 			}
 		}
 	}
-	fmt.Println("\n🎉 All tasks completed!")
+	// fmt.Println("\n🎉 All tasks completed!")
 	return nil
 }
