@@ -4,7 +4,7 @@ import "fmt"
 
 // Build metadata — set via -ldflags
 var (
-	Version   = "0.1.2"
+	Version   = "0.1.3"
 	Commit    = "none"     // GoReleaser က Build လုပ်ချိန်တွင် အလိုအလျောက် ပြောင်းမယ်
 	BuildTime = "unknown"  // GoReleaser က Build လုပ်ချိန်တွင် အလိုအလျောက် ပြောင်းမယ်
 )
