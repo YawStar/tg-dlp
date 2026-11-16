@@ -4,9 +4,9 @@ import "fmt"
 
 // Build metadata — set via -ldflags
 var (
-	Version   = "0.1.3"
-	Commit    = "none"     // GoReleaser က Build လုပ်ချိန်တွင် အလိုအလျောက် ပြောင်းမယ်
-	BuildTime = "unknown"  // GoReleaser က Build လုပ်ချိန်တွင် အလိုအလျောက် ပြောင်းမယ်
+	Version   = "0.2.3"
+	Commit    = "none"  
+	BuildTime = "unknown"
 )
 
 // Runtime flags — set by commands at startup
