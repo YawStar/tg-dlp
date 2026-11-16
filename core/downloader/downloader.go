@@ -3,14 +3,11 @@ package downloader
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/time/rate"
 
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
@@ -38,7 +35,7 @@ func New() *Downloader {
 	return &Downloader{
 		Inner: downloader.NewDownloader(),
 		Options: Options{
-			Concurrency: 3, // Default concurrency
+			Concurrency: 3,
 		},
 	}
 }
@@ -52,21 +49,6 @@ func NewWithConfig(opts Options) *Downloader {
 		Inner:   downloader.NewDownloader(),
 		Options: opts,
 	}
-}
-
-// rateLimitedReader wraps an io.Reader with a token bucket rate limiter.
-type rateLimitedReader struct {
-	r   io.Reader
-	lim *rate.Limiter
-}
-
-func (lr *rateLimitedReader) Read(p []byte) (int, error) {
-	n, err := lr.r.Read(p)
-	if n > 0 {
-		ctx := context.Background()
-		_ = lr.lim.WaitN(ctx, n)
-	}
-	return n, err
 }
 
 // Filename Template ကို ပြောင်းပေးတဲ့ Helper
@@ -106,17 +88,11 @@ func resolveOutputPaths(outputDir, safeName string, overwrite, skipSame bool, ex
 
 func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 	if info, err := os.Stat(partPath); err == nil {
-		// os.O_APPEND ကို ဖြုတ်ပြီး os.O_RDWR ကို သုံးပါမယ်
 		file, err := os.OpenFile(partPath, os.O_RDWR, 0644)
 		if err != nil {
 			return nil, 0, fmt.Errorf("cannot open part file: %w", err)
 		}
-		// ရှိပြီးသား size အတိုင်း offset ကို နေရာချပေးပါမယ်
 		size := info.Size()
-		if _, err := file.Seek(size, 0); err != nil {
-			file.Close()
-			return nil, 0, fmt.Errorf("cannot seek part file: %w", err)
-		}
 		if verbose {
 			runtime.DebugLog("🔄 Resuming file: %s from %.2f MB", filepath.Base(partPath), float64(size)/(1024*1024))
 		}
@@ -129,12 +105,13 @@ func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 	return file, 0, nil
 }
 
-// ---------- Stream with Retry ----------
-func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64, limitRate int64) error {
+// ⭐ Parallel Download နဲ့ Auto-Resume လုပ်ပေးမယ့် Function ⭐
+func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64) error {
 	backoff := 1 * time.Second
 	attempt := 1
 
 	for {
+		// ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ်
 		if expectedSize > 0 {
 			if info, err := w.File().Stat(); err == nil {
 				if info.Size() >= expectedSize {
@@ -143,14 +120,8 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 			}
 		}
 
-		// Apply rate limiting wrapper if limitRate > 0
-		var targetWriter io.Writer = w
-		if limitRate > 0 {
-			limiter := rate.NewLimiter(rate.Limit(limitRate), int(limitRate))
-			targetWriter = &rateLimitedWriter{w: w, lim: limiter}
-		}
-
-		_, err := dl.Download(api, loc).WithThreads(8).Stream(ctx, targetWriter)
+		// ⭐ Parallel ကို သုံးပြီး အပြိုင်ဆွဲချမယ် ⭐
+		_, err := dl.Download(api, loc).WithThreads(16).Parallel(ctx, w)
 		if err == nil {
 			return nil
 		}
@@ -180,38 +151,25 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 				}
 			}
 
-			fmt.Printf("\n⚠ Network dropped. Retrying (attempt %d) in %v...\n", attempt, backoff)
+			fmt.Printf("\n⚠ Network dropped at %s/%s. Retrying (attempt %d) in %v...\n",
+				progress.FormatSize(w.Current()),
+				progress.FormatSize(w.Total()),
+				attempt, backoff)
 
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(backoff):
 			}
-
-			if backoff < 30*time.Second {
+			if backoff < 10*time.Second {
 				backoff *= 2
 			}
-
+			fmt.Print("\033[2K\r")
 			attempt++
 			continue
 		}
-
 		return err
 	}
-}
-
-// rateLimitedWriter wraps an io.Writer with a token bucket rate limiter for stream downloads
-type rateLimitedWriter struct {
-	w   io.Writer
-	lim *rate.Limiter
-}
-
-func (lw *rateLimitedWriter) Write(p []byte) (int, error) {
-	ctx := context.Background()
-	if err := lw.lim.WaitN(ctx, len(p)); err != nil {
-		return 0, err
-	}
-	return lw.w.Write(p)
 }
 
 func extMatches(filterExts []string, ext string) bool {
@@ -296,12 +254,12 @@ func (d *Downloader) downloadDocument(ctx context.Context, api *tg.Client, media
 	startTime := time.Now()
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size, d.Options.LimitRate); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
 
-	_ = file.Close()
+	file.Close()
 	if err := os.Rename(partPath, outputPath); err != nil {
 		return false, fmt.Errorf("error renaming file: %w", err)
 	}
@@ -336,10 +294,10 @@ func (d *Downloader) downloadDocumentQuiet(ctx context.Context, api *tg.Client, 
 
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size, d.Options.LimitRate); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
-	_ = file.Close()
+	file.Close()
 	if err := os.Rename(partPath, outputPath); err != nil {
 		return false, "", fmt.Errorf("error renaming file: %w", err)
 	}
@@ -385,12 +343,12 @@ func (d *Downloader) downloadPhoto(ctx context.Context, api *tg.Client, media *t
 
 	startTime := time.Now()
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size), d.Options.LimitRate); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
 
-	_ = file.Close()
+	file.Close()
 	if err := os.Rename(partPath, outputPath); err != nil {
 		return false, fmt.Errorf("error renaming file: %w", err)
 	}
@@ -436,10 +394,10 @@ func (d *Downloader) downloadPhotoQuiet(ctx context.Context, api *tg.Client, med
 	defer file.Close()
 
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size), d.Options.LimitRate); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
-	_ = file.Close()
+	file.Close()
 	if err := os.Rename(partPath, outputPath); err != nil {
 		return false, "", fmt.Errorf("error renaming file: %w", err)
 	}
@@ -450,7 +408,6 @@ func (d *Downloader) downloadPhotoQuiet(ctx context.Context, api *tg.Client, med
 
 const CheckpointFileName = ".tg-dlp_checkpoint"
 
-// ChannelMedia downloads all media from a channel.
 func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetChannel *tg.InputChannel, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string) error {
 	fmt.Println("📥 Searching for media in channel...")
 	peer := &tg.InputPeerChannel{ChannelID: targetChannel.ChannelID, AccessHash: targetChannel.AccessHash}
@@ -481,19 +438,15 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 			if savedScanned, err := parseAtoi(parts[1]); err == nil {
 				totalScanned = savedScanned
 			}
-			fmt.Printf("🔄 Found checkpoint. Resuming from Message ID: %d\n", offsetID)
+			fmt.Printf("🔄 Found checkpoint. Resuming from Message ID: %d (Scanned: %d/%d)\n", offsetID, totalScanned, totalMedia)
 		}
 	}
 
 	limit := 100
-	var totalDownloaded, totalFailed int64
+	totalDownloaded, totalFailed := 0, 0
 
 	var wg sync.WaitGroup
-	workerLimit := d.Options.Concurrency
-	if workerLimit <= 0 {
-		workerLimit = 3
-	}
-	sem := make(chan struct{}, workerLimit)
+	sem := make(chan struct{}, 3)
 	var mu sync.Mutex
 
 	for {
@@ -504,7 +457,6 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 			}
 			return fmt.Errorf("error fetching messages: %w", err)
 		}
-
 		var msgs []*tg.Message
 		if m, ok := messages.(*tg.MessagesChannelMessages); ok {
 			for _, msgClass := range m.Messages {
@@ -513,70 +465,72 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 				}
 			}
 		}
-
 		if len(msgs) == 0 {
 			break
 		}
 
 		for _, msg := range msgs {
-			mu.Lock()
 			totalScanned++
-			mu.Unlock()
+			var percent float64
+			if totalMedia > 0 {
+				percent = float64(totalScanned) / float64(totalMedia) * 100
+				if percent > 100 {
+					percent = 100
+				}
+			}
+			fmt.Printf("\r[Progress: %d/%d | %.2f%%] ", totalScanned, totalMedia, percent)
 
 			wg.Add(1)
 			sem <- struct{}{}
-			go func(m *tg.Message) {
+			go func(msg *tg.Message) {
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				downloaded, _, err := d.SingleMediaQuiet(ctx, api, m, m.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
-				mu.Lock()
-				defer mu.Unlock()
-
+				downloaded, skipReason, err := d.SingleMediaQuiet(ctx, api, msg, msg.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
 				if err != nil {
-					fmt.Printf("\n⚠ Error (media_%d): %v\n", m.ID, err)
+					fmt.Printf("\n⚠ Error: %v\n", err)
+					mu.Lock()
 					totalFailed++
+					mu.Unlock()
 				} else if downloaded {
+					mu.Lock()
 					totalDownloaded++
-					fmt.Printf("\n✅ Downloaded: media_%d\n", m.ID)
+					mu.Unlock()
+					fmt.Printf("\n✅ Downloaded: media_%d\n", msg.ID)
+				} else {
+					fmt.Printf("\n⏭ Skipped (media_%d): %s\n", msg.ID, skipReason)
 				}
 			}(msg)
 		}
 
 		lastMsgID := msgs[len(msgs)-1].ID
-		_ = os.WriteFile(checkpointFile, []byte(fmt.Sprintf("%d,%d", lastMsgID, totalScanned)), 0644)
-		
-		if offsetID == lastMsgID {
-			break
+		err = os.WriteFile(checkpointFile, []byte(fmt.Sprintf("%d,%d", lastMsgID, totalScanned)), 0644)
+		if err != nil {
+			runtime.DebugLog("⚠ Failed to save checkpoint: %v", err)
 		}
 		offsetID = lastMsgID
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	wg.Wait()
-	_ = os.Remove(checkpointFile)
+	os.Remove(checkpointFile)
 
 	fmt.Printf("\n🎉 Download finished!\n")
+	fmt.Printf("📊 Total: %d\n", totalDownloaded+totalFailed)
 	fmt.Printf("✅ Successful: %d\n", totalDownloaded)
 	fmt.Printf("❌ Failed: %d\n", totalFailed)
 	return nil
 }
 
-// ThreadMedia downloads all media from a forum thread.
 func (d *Downloader) ThreadMedia(ctx context.Context, api *tg.Client, targetChannel *tg.InputChannel, threadID int, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string) error {
 	fmt.Printf("💬 Fetching replies from thread (MsgID: %d)...\n", threadID)
 	peer := &tg.InputPeerChannel{ChannelID: targetChannel.ChannelID, AccessHash: targetChannel.AccessHash}
 
 	offsetID := 0
 	limit := 100
-	var totalDownloaded, totalFailed int64
+	totalDownloaded, totalFailed, totalScanned := 0, 0, 0
 	var wg sync.WaitGroup
-	
-	workerLimit := d.Options.Concurrency
-	if workerLimit <= 0 {
-		workerLimit = 3
-	}
-	sem := make(chan struct{}, workerLimit)
+	sem := make(chan struct{}, 3)
 	var mu sync.Mutex
 
 	for {
@@ -587,49 +541,61 @@ func (d *Downloader) ThreadMedia(ctx context.Context, api *tg.Client, targetChan
 			}
 			return fmt.Errorf("error fetching replies: %w", err)
 		}
-
 		var msgs []*tg.Message
+		var totalReplies int
 		if m, ok := replies.(*tg.MessagesChannelMessages); ok {
+			totalReplies = m.Count
 			for _, msgClass := range m.Messages {
 				if msg, ok := msgClass.(*tg.Message); ok && msg.Media != nil {
 					msgs = append(msgs, msg)
 				}
 			}
 		}
-
 		if len(msgs) == 0 {
 			break
 		}
 
 		for _, msg := range msgs {
+			totalScanned++
+			var percent float64
+			if totalReplies > 0 {
+				percent = float64(totalScanned) / float64(totalReplies) * 100
+				if percent > 100 {
+					percent = 100
+				}
+			}
+			fmt.Printf("\r[Thread Progress: %d/%d | %.2f%%] ", totalScanned, totalReplies, percent)
+
 			wg.Add(1)
 			sem <- struct{}{}
-			go func(m *tg.Message) {
+			go func(msg *tg.Message) {
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				downloaded, _, err := d.SingleMediaQuiet(ctx, api, m, m.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
-				mu.Lock()
-				defer mu.Unlock()
-
+				downloaded, skipReason, err := d.SingleMediaQuiet(ctx, api, msg, msg.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
 				if err != nil {
+					fmt.Printf("\n⚠ Error: %v\n", err)
+					mu.Lock()
 					totalFailed++
+					mu.Unlock()
 				} else if downloaded {
+					mu.Lock()
 					totalDownloaded++
+					mu.Unlock()
+					fmt.Printf("\n✅ Downloaded: media_%d\n", msg.ID)
+				} else {
+					fmt.Printf("\n⏭ Skipped (media_%d): %s\n", msg.ID, skipReason)
 				}
 			}(msg)
 		}
 
-		lastMsgID := msgs[len(msgs)-1].ID
-		if offsetID == lastMsgID {
-			break
-		}
-		offsetID = lastMsgID
-		time.Sleep(200 * time.Millisecond)
+		offsetID = msgs[len(msgs)-1].ID
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	wg.Wait()
 	fmt.Printf("\n🎉 Thread Download finished!\n")
+	fmt.Printf("📊 Total Media Found: %d\n", totalDownloaded+totalFailed)
 	fmt.Printf("✅ Successful: %d\n", totalDownloaded)
 	fmt.Printf("❌ Failed: %d\n", totalFailed)
 	return nil

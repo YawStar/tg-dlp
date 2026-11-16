@@ -63,32 +63,34 @@ func truncateFilename(name string, maxLen int) string {
 	return name[:maxLen-3] + "..."
 }
 
-func (w *Writer) Write(p []byte) (int, error) {
+// ⭐ WriteAt ကို implement လုပ်ထားပါတယ် (Parallel Download အတွက်) ⭐
+func (w *Writer) WriteAt(p []byte, off int64) (int, error) {
 	w.mu.Lock()
-	if w.total > 0 && w.current >= w.total {
-		w.mu.Unlock()
+	defer w.mu.Unlock()
+
+	// ဖိုင်အရွယ်အစား ကျော်သွားရင် ဆက်မရေးတော့ဘူး
+	if w.total > 0 && off >= w.total {
 		return len(p), nil
 	}
 
+	// ဖိုင်အရွယ်အစား ကျော်မသွားအောင် ဖြတ်တောက်မယ်
 	writeLen := len(p)
 	if w.total > 0 {
-		remaining := w.total - w.current
+		remaining := w.total - off
 		if int64(writeLen) > remaining {
 			writeLen = int(remaining)
 		}
 	}
 
-	n, err := w.file.Write(p[:writeLen])
-	w.mu.Unlock()
-
+	n, err := w.file.WriteAt(p[:writeLen], off)
 	if err != nil {
 		return n, err
 	}
 
-	w.mu.Lock()
 	w.current += int64(n)
 	now := time.Now()
 
+	// Progress Bar ကို 100ms တစ်ခါ Update လုပ်မယ်
 	if now.Sub(w.last) >= 100*time.Millisecond || (w.total > 0 && w.current >= w.total) {
 		if now.Sub(w.last) > 2*time.Second {
 			w.lastSpeed = 0
@@ -172,7 +174,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 		fmt.Printf("\033[2K\r%-*s", width-1, line)
 		_ = os.Stdout.Sync()
 	}
-	w.mu.Unlock()
+
 	return n, nil
 }
 
