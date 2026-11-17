@@ -118,22 +118,28 @@ tg-dlp dl -u https://t.me/channel/123
 # 4. Download an entire channel (filtered and skip duplicates)
 tg-dlp dl -u https://t.me/channel -i mp4,mkv --skip-same
 
-# 5. Export a channel's messages to JSON (Limit 500 messages)
+# 5. Number of concurrent workers for downloading (Default: 3)
+tg-dlp dl -u https://t.me/channel -concurrency 5
+
+# 6. Download speed limit (e.g., 500K, 1M)
+tg-dlp dl -u https://t.me/channel -r 2.5M
+
+# 7. Export a channel's messages to JSON (Limit 500 messages)
 tg-dlp export -u https://t.me/channel/123 -l 500
 
-# 6. Backup the exported files into a single ZIP
+# 8. Backup the exported files into a single ZIP
 tg-dlp backup -d exports -o my_backup.zip
 
-# 7. Restore the messages to Saved Messages (or a specific channel)
+# 9. Restore the messages to Saved Messages (or a specific channel)
 tg-dlp restore -f exports/export_123.json -c me
 
-# 8. Upload a directory and delete local files after success
+# 10. Upload a directory and delete local files after success
 tg-dlp up -p ./videos -c @mychannel --rm
 
-# 9. Purge text messages from a channel
+# 11. Purge text messages from a channel
 tg-dlp purge -c @mychannel --text -y
 
-# 10. Debugging an issue
+# 12. Debugging an issue
 tg-dlp dl -u https://t.me/channel/123 --debug
 ```
 

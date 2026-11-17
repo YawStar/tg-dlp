@@ -5,6 +5,7 @@
 <img align="right" src="docs/assets/img/tg-dlp.png" width="250" alt="tg-dlp logo">
 
 **မြန်ဆန်ပြီး လုံခြုံစိတ်ချရသော၊ စနစ်အားလုံးနှင့် အဆင်ပြေသည့် Telegram မီဒီယာ ဒေါင်းလုဒ်ဆွဲ ပရိုဂရမ်။**
+
 <p>
   <code>tg-dlp</code> သည် Telegram မှ မီဒီယာဖိုင်များ၊ ဗီဒီယိုများ၊ ဓာတ်ပုံများနှင့် စာတိုများကို အလွန်လျင်မြန်စွာ ဒေါင်းလုဒ်ဆွဲနိုင်ရန် ဒီဇိုင်းထုတ်ထားသော အစွမ်းထက် Command-Line Interface (CLI) ကိရိယာတစ်ခု ဖြစ်ပါသည်။
 </p>
@@ -69,10 +70,13 @@
 ## 📦 တပ်ဆင်ခြင်း (Installation)
 
 ### ၁။ အသင့်သုံး Binary ဖိုင်များ (အကြံပြုထားသည်)
+
 သင့်စနစ်အတွက် နောက်ဆုံးထွက် Binary ဖိုင်ကို [Releases](https://github.com/YawStar/tg-dlp/releases) စာမျက်နှာမှ ဒေါင်းလုဒ်ဆွဲနိုင်ပါသည်။
 
 ### ၂။ Source Code မှ တည်ဆောက်ခြင်း
+
 သင့်ကွန်ပျူတာတွင် **Go 1.22+** တပ်ဆင်ထားရန် လိုအပ်ပါသည်။
+
 ```bash
 git clone https://github.com/YawStar/tg-dlp.git
 cd tg-dlp
@@ -80,7 +84,9 @@ go build -o tg-dlp .
 ```
 
 ### ၃။ Docker အသုံးပြုခြင်း
+
 Go မတပ်ဆင်ဘဲ `tg-dlp` ကို Docker Container အတွင်း အသုံးပြုနိုင်ပါသည်။
+
 ```bash
 # Image ကို တည်ဆောက်ရန်
 docker build -t tg-dlp .
@@ -112,22 +118,28 @@ tg-dlp dl -u https://t.me/channel/123
 # 4. Channel တစ်ခုလုံးကို ဒေါင်းလုဒ်ဆွဲရန် (Filter သုံးပြီး ထပ်နေတာတွေ ကျော်ရန်)
 tg-dlp dl -u https://t.me/channel -i mp4,mkv --skip-same
 
-# 5. Channel ရဲ့ မက်ဆေ့ချ်တွေကို JSON အဖြစ် ထုတ်ယူရန် (မက်ဆေ့ချ် ၅၀၀ အထိ)
+# 5. ဒေါင်းလုဒ်ဆွဲရန် (Concurrency သတ်မှတ်ပြီး Download လုပ်ရန်)
+tg-dlp dl -u https://t.me/channel  -concurrency 5
+
+# 6. ဒေါင်းလုဒ်ဆွဲရန် (Bandwidth ကိုအပြည့်မသုံးပဲ Speed Limit နဲ့ Download လုပ်ရန်)
+tg-dlp dl -u https://t.me/channel -r 2.5M
+
+# 7. Channel ရဲ့ မက်ဆေ့ချ်တွေကို JSON အဖြစ် ထုတ်ယူရန် (မက်ဆေ့ချ် ၅၀၀ အထိ)
 tg-dlp export -u https://t.me/channel/123 -l 500
 
-# 6. ထုတ်ယူထားတဲ့ ဖိုင်တွေကို ZIP တစ်ခုတည်းအဖြစ် ချုံ့ရန်
+# 8. ထုတ်ယူထားတဲ့ ဖိုင်တွေကို ZIP တစ်ခုတည်းအဖြစ် ချုံ့ရန်
 tg-dlp backup -d exports -o my_backup.zip
 
-# 7. မက်ဆေ့ချ်တွေကို Saved Messages ဆီ ပြန်ပို့ရန် (သို့) သီးသန့် Channel ဆီ ပို့ရန်
+# 9. မက်ဆေ့ချ်တွေကို Saved Messages ဆီ ပြန်ပို့ရန် (သို့) သီးသန့် Channel ဆီ ပို့ရန်
 tg-dlp restore -f exports/export_123.json -c me
 
-# 8. Folder တစ်ခုကို တင်ပြီး အောင်မြင်ရင် ဒေသတွင်းဖိုင်တွေ ဖျက်ရန်
+# 10. Folder တစ်ခုကို တင်ပြီး အောင်မြင်ရင် ဒေသတွင်းဖိုင်တွေ ဖျက်ရန်
 tg-dlp up -p ./videos -c @mychannel --rm
 
-# 9. Channel ထဲက စာသားမက်ဆေ့ချ်တွေကို ရှင်းလင်းရန်
+# 11. Channel ထဲက စာသားမက်ဆေ့ချ်တွေကို ရှင်းလင်းရန်
 tg-dlp purge -c @mychannel --text -y
 
-# 10. ပြဿနာတစ်ခုခုအတွက် Debug လုပ်ရန်
+# 12. ပြဿနာတစ်ခုခုအတွက် Debug လုပ်ရန်
 tg-dlp dl -u https://t.me/channel/123 --debug
 ```
 
@@ -135,28 +147,29 @@ tg-dlp dl -u https://t.me/channel/123 --debug
 
 ## 📖 Command လမ်းညွှန် (Command Reference)
 
-| Command | Aliases (အတိုကောက်) | ရှင်းလင်းချက် |
-| :--- | :--- | :--- |
-| `download` | `dl` | Telegram Link များမှ မီဒီယာများ ဒေါင်းလုဒ်ဆွဲခြင်း။ |
-| `upload` | `up` | ဒေသတွင်းဖိုင်များကို Telegram သို့ တင်ခြင်း။ |
-| `export` | — | Channel မက်ဆေ့ချ်များကို JSON ဖိုင်အဖြစ် ထုတ်ယူခြင်း။ |
-| `backup` | — | Folder တစ်ခု (ဥပမာ - exports) ကို ZIP ဖိုင်အဖြစ် ချုံ့ခြင်း။ |
-| `restore` | — | JSON ဖိုင်မှ မက်ဆေ့ချ်များကို Chat တစ်ခုသို့ ပြန်လည်ပို့ဆောင်ခြင်း။ |
-| `info` | — | Channel၊ Post သို့မဟုတ် Thread အချက်အလက်များ ကြည့်ရှုခြင်း။ |
-| `whoami` | — | သင့်အကောင့်အချက်အလက်များ ကြည့်ရှုခြင်း။ |
-| `login` | — | Telegram သို့ Login ဝင်ခြင်း သို့မဟုတ် အတင်းပြန် Login ဝင်ခြင်း။ |
-| `logout` | — | သိမ်းဆည်းထားသော Session Password ကို ရှင်းလင်းခြင်း။ |
-| `clear-cache`| `clearcache` | သိမ်းဆည်းထားသော Password ကိုသာ ရှင်းလင်းခြင်း (Session ကို မထိခိုက်ပါ)။ |
-| `delete` | `del`, `rm` | URL အသုံးပြု၍ မက်ဆေ့ချ်တစ်ခုတည်းကို ဖျက်ခြင်း။ |
-| `purge` | `clear` | Channel တစ်ခုရှိ မက်ဆေ့ချ်များစွာကို ဖျက်ခြင်း။ |
-| `version` | `-v` | Version အချက်အလက် ကြည့်ရှုခြင်း။ |
-| `help` | `-h` | Help menu ကို ကြည့်ရှုခြင်း။ |
+| Command       | Aliases (အတိုကောက်) | ရှင်းလင်းချက်                                                           |
+| :------------ | :------------------ | :---------------------------------------------------------------------- |
+| `download`    | `dl`                | Telegram Link များမှ မီဒီယာများ ဒေါင်းလုဒ်ဆွဲခြင်း။                     |
+| `upload`      | `up`                | ဒေသတွင်းဖိုင်များကို Telegram သို့ တင်ခြင်း။                            |
+| `export`      | —                   | Channel မက်ဆေ့ချ်များကို JSON ဖိုင်အဖြစ် ထုတ်ယူခြင်း။                   |
+| `backup`      | —                   | Folder တစ်ခု (ဥပမာ - exports) ကို ZIP ဖိုင်အဖြစ် ချုံ့ခြင်း။            |
+| `restore`     | —                   | JSON ဖိုင်မှ မက်ဆေ့ချ်များကို Chat တစ်ခုသို့ ပြန်လည်ပို့ဆောင်ခြင်း။     |
+| `info`        | —                   | Channel၊ Post သို့မဟုတ် Thread အချက်အလက်များ ကြည့်ရှုခြင်း။             |
+| `whoami`      | —                   | သင့်အကောင့်အချက်အလက်များ ကြည့်ရှုခြင်း။                                 |
+| `login`       | —                   | Telegram သို့ Login ဝင်ခြင်း သို့မဟုတ် အတင်းပြန် Login ဝင်ခြင်း။        |
+| `logout`      | —                   | သိမ်းဆည်းထားသော Session Password ကို ရှင်းလင်းခြင်း။                    |
+| `clear-cache` | `clearcache`        | သိမ်းဆည်းထားသော Password ကိုသာ ရှင်းလင်းခြင်း (Session ကို မထိခိုက်ပါ)။ |
+| `delete`      | `del`, `rm`         | URL အသုံးပြု၍ မက်ဆေ့ချ်တစ်ခုတည်းကို ဖျက်ခြင်း။                          |
+| `purge`       | `clear`             | Channel တစ်ခုရှိ မက်ဆေ့ချ်များစွာကို ဖျက်ခြင်း။                         |
+| `version`     | `-v`                | Version အချက်အလက် ကြည့်ရှုခြင်း။                                        |
+| `help`        | `-h`                | Help menu ကို ကြည့်ရှုခြင်း။                                            |
 
 ---
 
 ## ⚙️ အထွေထွေ ရွေးချယ်စရာများ (Global Options)
 
 ဤ Flag များကို Command **အားလုံး**တွင် အသုံးပြုနိုင်ပါသည်။
+
 - `--proxy <url>`: Manual Proxy URL (ဥပမာ - `socks5://127.0.0.1:1080` သို့မဟုတ် `http://...`)။
 - `--no-proxy`: စနစ်၏ Proxy ဆက်တင်များကို လျစ်လျူရှုရန်။
 - `--skip-flood`: Telegram ၏ `FLOOD_WAIT` ကို စောင့်ဆိုင်းခြင်းမှ ကျော်လွှားရန် (သတိပြုသုံးပါ)။
@@ -167,6 +180,7 @@ tg-dlp dl -u https://t.me/channel/123 --debug
 ## 🔍 Command အလိုက် ရွေးချယ်စရာများ (Command-Specific Options)
 
 ### `download` (`dl`)
+
 - `-u, --url <link>`: Telegram Link (အကြိမ်ကြိမ် ထည့်နိုင်သည်)။
 - `-d, --dir <path>`: Output Folder (မူလ - `downloads`)။
 - `-i, --filter <exts>`: ဒေါင်းလုဒ်ဆွဲမည့် ဖိုင်အမျိုးအစားများ (ဥပမာ - `mp4,mkv,mp3`)။
@@ -178,6 +192,7 @@ tg-dlp dl -u https://t.me/channel/123 --debug
 - `--dry-run`: ဒေါင်းလုဒ်မဆွဲဘဲ ဘာတွေဆွဲမည်ကို စာရင်းပြရန်။
 
 ### `upload` (`up`)
+
 - `-p, --path <path>`: တင်မည့် ဖိုင် သို့မဟုတ် Folder (အကြိမ်ကြိမ် ထည့်နိုင်သည်)။
 - `-c, --chat <id/link>`: ပို့မည့် Chat (မူလ - Saved Messages)။
 - `-i, --include <exts>`: သတ်မှတ်ထားသော Extension များကိုသာ တင်ရန် (ဥပမာ - `jpg,png`)။
@@ -186,22 +201,27 @@ tg-dlp dl -u https://t.me/channel/123 --debug
 - `--rm`: တင်ပြီးပါက local ဖိုင်များကို ဖျက်ရန်။
 
 ### `export`
+
 - `-u, --url <link>`: Telegram Channel Link (မဖြစ်မနေ လိုအပ်သည်)။
 - `-d, --dir <path>`: Output Folder (မူလ - `exports`)။
 - `-l, --limit <num>`: ထုတ်ယူမည့် မက်ဆေ့ချ် အများဆုံးအရေအတွက် (မူလ - `0` ဆိုပါက အားလုံး)။
 
 ### `backup`
+
 - `-d, --dir <path>`: အရန်သိမ်းဆည်းမည့် Folder (မူလ - `exports`)။
 - `-o, --out <name>`: ထွက်လာမည့် ZIP ဖိုင်အမည် (မူလ - `backup_YYYYMMDD.zip`)။
 
 ### `restore`
+
 - `-f, --file <path>`: ပြန်လည်ပို့ဆောင်မည့် JSON ဖိုင် (မဖြစ်မနေ လိုအပ်သည်)။
 - `-c, --chat <id/link/me>`: ပို့မည့် Chat သို့မဟုတ် Saved Messages အတွက် `me` ဟု ရိုက်ထည့်ပါ။
 
 ### `delete` (`del`, `rm`)
+
 - `-u, --url <link>`: Telegram မက်ဆေ့ချ် Link။
 
 ### `purge` (`clear`)
+
 - `-c, --chat <id/link>`: ရှင်းလင်းမည့် Channel (မဖြစ်မနေ လိုအပ်သည်)။
 - `-i, --include <exts>`: သတ်မှတ်ထားသော Extension များကိုသာ ဖျက်ရန်။
 - `-e, --exclude <exts>`: သတ်မှတ်ထားသော Extension များကို ချန်လှပ်ရန်။
@@ -214,12 +234,14 @@ tg-dlp dl -u https://t.me/channel/123 --debug
 ## 🔐 လုံခြုံရေးနှင့် ကိုယ်ရေးကိုယ်တာ (Security & Privacy)
 
 သင့် Telegram Session သည် အလွန်အရေးကြီးပါသည်။ `tg-dlp` သည် ၎င်းကို အောက်ပါအတိုင်း ကာကွယ်ပေးထားပါသည် -
+
 1. **AES-256-GCM**: ဒေတာများကို စက်ပစ္စည်းအတွင်း၌ Encrypt လုပ်ထားပါသည်။
 2. **Argon2id**: သင့် Password မှ Encryption Key ကို ထုတ်ယူရာတွင် Memory-hard hashing algorithm ကို အသုံးပြုထားပါသည်။
 3. **In-Memory Cache**: သင့် Password ကို မည်မျှကြာကြာ မှတ်ထားမည်ကို သင်ကိုယ်တိုင် ရွေးချယ်နိုင်ပါသည် (မူလ - မိနစ် ၃၀ မှ "Session ကုန်ဆုံးသည်အထိ")။
 
 > ⚠️ **သတိပေးချက်:** သင့်၏ `~/.tg-dlp/` Folder ကို မည်သူ့ကိုမျှ မမျှဝေပါနှင့်။ ၎င်းတွင် သင့်၏ `session.enc` နှင့် `config.enc` ဖိုင်များ ပါဝင်ပါသည်။
 > မူလ Folder တည်နေရာများမှာ -
+>
 > - **Windows**: `C:\Users\<သင့်အမည်>\.tg-dlp\`
 > - **Linux/macOS**: `~/.tg-dlp/`
 
@@ -258,6 +280,7 @@ tg-dlp/
     ├── runtime/          # Global Version၊ Flags၊ Debug အခြေအနေ
     └── telegram/         # Link ခွဲခြမ်းစိတ်ဖြာခြင်း၊ ဖိုင် Extension များ၊ API အထောက်အကူများ
 ```
+
 ---
 
 ## 💖 ဆော့ဖ်ဝဲရေးသားသူကို ပံ့ပိုးရန် (Support the Developer)
