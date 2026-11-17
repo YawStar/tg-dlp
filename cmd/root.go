@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	_ "embed" // ⭐ embed ကို သုံးဖို့ လိုပါတယ်
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,10 @@ import (
 	"tg-dlp/core/session"
 	"tg-dlp/pkg/runtime"
 )
+
+// ⭐ secret.txt ဖိုင်ကို Binary ထဲ ထည့်သွင်းမယ် ⭐
+//go:embed secret.txt
+var defaultCredentials string
 
 // Default API credentials (replace with your own).
 const (
@@ -135,6 +140,7 @@ func loadConfig(configPath string) (int, string) {
 	red := "\033[31m"
 	reset := "\033[0m"
 
+	// ၁။ ဖိုင်ရှိပြီးသားဆိုရင် ဖတ်မယ်
 	if data, err := os.ReadFile(configPath); err == nil {
 		decData, err := session.DecryptData(data, configPassword)
 		if err != nil {
@@ -149,6 +155,25 @@ func loadConfig(configPath string) (int, string) {
 		return appID, appHash
 	}
 
+	// ၂။ ဖိုင်မရှိရင် embed လုပ်ထားတဲ့ secret.txt ကို အရင်စစ်မယ်
+	if defaultCredentials != "" {
+		parts := strings.Split(strings.TrimSpace(defaultCredentials), "|")
+		if len(parts) == 2 {
+			id, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+			hash := strings.TrimSpace(parts[1])
+			if err == nil && id != 0 && hash != "" {
+				// Default ကို သုံးမယ်
+				encData, err := session.EncryptData(fmt.Appendf(nil, "%d|%s", id, hash), configPassword)
+				if err == nil {
+					_ = os.WriteFile(configPath, encData, 0600)
+					fmt.Printf("\n%s✅ Default API credentials loaded and saved to %s%s\n", green, configPath, reset)
+				}
+				return id, hash
+			}
+		}
+	}
+
+	// ၃။ နှစ်ခုလုံး မရှိရင် User ကို မေးမယ်
 	fmt.Printf("\n%s⚠️  Telegram API credentials missing.%s\n", yellow, reset)
 	fmt.Printf("%s   (Get them from https://my.telegram.org)%s\n\n", cyan, reset)
 	reader := bufio.NewReader(os.Stdin)

@@ -31,3 +31,6 @@ session.json
 # Local downloads
 /downloads/
 /exports/
+
+# Secret API and Hash
+cmd/secret.txt
