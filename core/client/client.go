@@ -30,6 +30,39 @@ func getSystemProxy() string {
 	return ""
 }
 
+// askCacheDuration က Password ကို ဘယ်လောက်ကြာကြာ မှတ်ထားမလဲဆိုတာကို မေးပါတယ်။
+func askCacheDuration() time.Duration {
+	fmt.Println("\n⏱  How long should I remember this password?")
+	fmt.Println("   1. 30 mins (Default)")
+	fmt.Println("   2. 1 hour")
+	fmt.Println("   3. 2 hours")
+	fmt.Println("   4. 3 hours")
+	fmt.Println("   5. Once (Do not cache)")
+	fmt.Println("   0. Until session expires (Unexpired)")
+	fmt.Print("\n👉 Choose an option: ")
+
+	var choice string
+	fmt.Scanln(&choice)
+
+	switch choice {
+	case "1", "":
+		return 30 * time.Minute
+	case "2":
+		return 1 * time.Hour
+	case "3":
+		return 2 * time.Hour
+	case "4":
+		return 3 * time.Hour
+	case "5":
+		return 0 // Cache မလုပ်ဘူး
+	case "0":
+		return 100 * 365 * 24 * time.Hour // Unexpired အတွက် နှစ် 100 လောက် သတ်မှတ်မယ်
+	default:
+		fmt.Println("⚠ Invalid choice. Using default (30 mins).")
+		return 30 * time.Minute
+	}
+}
+
 // GetClient builds a telegram.Client with encrypted session storage.
 func GetClient(appID int, appHash, sessionPath string, noProxy bool, proxyStr string) (*telegram.Client, error) {
 	_, err := os.Stat(sessionPath)
@@ -40,12 +73,12 @@ func GetClient(appID int, appHash, sessionPath string, noProxy bool, proxyStr st
 
 	if isNew {
 		session.ClearPasswordCache(sessionPath)
-		fmt.Print("\n🔐 No secure session found. Let's create a new one.\n")
+		fmt.Print("\n🔐 No secure session found. Create a new one please.\n")
 		fmt.Print("⚠️  Note: This is NOT your Telegram account password.\n")
-		fmt.Print("   It is a new password to secure your local session file.\n\n")
+		fmt.Print("     It is a new password to protect your local session file.\n\n")
 
 		for {
-			pass1 := session.PromptPassword("🔑 Set a new password for session file (Min 4 characters): ")
+			pass1 := session.PromptPassword("🔑 Set a new password (Min 4 characters): ")
 			pass2 := session.PromptPassword("🔁 Confirm password: ")
 			if pass1 != pass2 {
 				fmt.Println("❌ Passwords do not match. Try again.")
@@ -60,8 +93,19 @@ func GetClient(appID int, appHash, sessionPath string, noProxy bool, proxyStr st
 			break
 		}
 
-		session.SavePasswordToCache(sessionPath, password, 30*time.Minute)
-		fmt.Println("✅ Password will be remembered for 30 mins (default).")
+		duration := askCacheDuration()
+		if duration > 0 {
+			session.SavePasswordToCache(sessionPath, password, duration)
+			if duration == 100*365*24*time.Hour {
+				fmt.Println("✅ Password will be remembered until the session file is deleted.")
+			} else {
+				fmt.Printf("✅ Password will be remembered for %v.\n", duration)
+			}
+		} else {
+			session.ClearPasswordCache(sessionPath)
+			fmt.Println("✅ Password will not be cached.")
+		}
+
 	} else {
 		cachedPass, found := session.LoadPasswordFromCache(sessionPath)
 		if found {
@@ -79,42 +123,21 @@ func GetClient(appID int, appHash, sessionPath string, noProxy bool, proxyStr st
 		}
 
 		if needPasswordPrompt {
+			// ⭐ Password ကို အရင်ရိုက်ခိုင်းမယ် ⭐
 			password = session.PromptPassword("\n🔑 Enter session file password: ")
-
-			fmt.Println("\n⏱  How long should I remember this password?")
-			fmt.Println("   1) 30 mins (Default)")
-			fmt.Println("   2) 1 hour")
-			fmt.Println("   3) 2 hours")
-			fmt.Println("   4) 3 hours")
-			fmt.Println("   5) Until session expires (Unexpired)")
-			fmt.Println("   0) Once (Do not cache)")
-			fmt.Print("\n👉 Choose an option: ")
-
-			var choice string
-			fmt.Scanln(&choice)
-
-			var duration time.Duration
-			switch choice {
-			case "1", "":
-				duration = 30 * time.Minute
-			case "2":
-				duration = 1 * time.Hour
-			case "3":
-				duration = 2 * time.Hour
-			case "4":
-				duration = 3 * time.Hour
-			case "5":
-				duration = 100 * 365 * 24 * time.Hour
-			case "0":
-				duration = 0
-			default:
-				fmt.Println("⚠ Invalid choice. Using default (30 mins).")
-				duration = 30 * time.Minute
+			
+			// ⭐ Password မှန်မမှန် အရင်စစ်မယ် ⭐
+			storage := &session.EncryptedSessionStorage{Path: sessionPath, Password: password}
+			if _, err := storage.LoadSession(context.Background()); err != nil {
+				session.ClearPasswordCache(sessionPath)
+				return nil, errors.New("invalid password")
 			}
 
+			// ⭐ မှန်မှသာ မေးခွန်းမေးပြီး Cache သိမ်းမယ် ⭐
+			duration := askCacheDuration()
 			if duration > 0 {
 				session.SavePasswordToCache(sessionPath, password, duration)
-				if choice == "5" {
+				if duration == 100*365*24*time.Hour {
 					fmt.Println("✅ Password will be remembered until the session file is deleted.")
 				} else {
 					fmt.Printf("✅ Password will be remembered for %v.\n", duration)

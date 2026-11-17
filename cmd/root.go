@@ -122,6 +122,11 @@ func Run() {
 		if err := RunLoginCmd(appID, appHash, sessionPath); err != nil {
 			fmt.Printf("Error: %v\n", err)
 		}
+	case "set-cache", "config-cache":
+		if err := RunSetCacheCmd(sessionPath); err != nil {
+			fmt.Printf("Error: %v\n", err)
+		}
+		return
 	default:
 		fmt.Printf("❌ Unknown command: '%s'\n\n", command)
 		PrintHelp()

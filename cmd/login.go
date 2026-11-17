@@ -54,12 +54,19 @@ func RunLoginCmd(appID int, appHash, sessionPath string) error {
 	})
 }
 
-// RunLogoutCmd clears the cached session password.
+// RunLogoutCmd clears the cached password AND deletes the session file.
 func RunLogoutCmd(sessionPath string) error {
-	fmt.Println("🔄 Clearing cached session password...")
+	fmt.Println("🔄 Clearing cached session password and deleting session file...")
 	session.ClearPasswordCache(sessionPath)
-	fmt.Println("✅ Session password cache cleared.")
-	fmt.Println("   You will need to enter the password again next time.")
+	
+	// ⭐ Session ဖိုင်ကိုပါ ဖျက်မယ် ⭐
+	err := os.Remove(sessionPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete session file: %w", err)
+	}
+	
+	fmt.Println("✅ Session cleared successfully.")
+	fmt.Println("   You will need to log in again next time.")
 	return nil
 }
 
