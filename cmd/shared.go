@@ -27,9 +27,9 @@ func PrintVersion() {
 	yellow := "\033[33m"
 	reset := "\033[0m"
 
-	fmt.Printf("%stg-dlp Version:%s %s%s%s\n", cyan, reset, green, runtime.Version, reset)
-	fmt.Printf("%sCommit:%s         %s%s%s\n", cyan, reset, yellow, runtime.Commit, reset)
-	fmt.Printf("%sBuild Time:%s     %s%s%s\n", cyan, reset, yellow, runtime.BuildTime, reset)
+	fmt.Printf("%sVersion:%s %s%s%s\n", cyan, reset, green, runtime.Version, reset)
+	fmt.Printf("%sCommit:%s  %s%s%s\n", cyan, reset, yellow, runtime.Commit, reset)
+	fmt.Printf("%sDate:%s    %s%s%s\n", cyan, reset, yellow, runtime.BuildTime, reset)
 }
 
 // PrintHelp prints the main help text.
