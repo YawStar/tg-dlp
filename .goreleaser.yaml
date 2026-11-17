@@ -34,7 +34,7 @@ builds:
     ldflags:
       - -s -w
       # Version ကို runtime.go ကနေ ယူသုံးဖို့ ဖျက်ထားပါတယ်
-      # - -X tg-dlp/pkg/runtime.Version={{.Version}}
+      - -X tg-dlp/pkg/runtime.Version={{.Version}}
       - -X tg-dlp/pkg/runtime.Commit={{.FullCommit}}
       - -X tg-dlp/pkg/runtime.BuildTime={{.Date}}
 

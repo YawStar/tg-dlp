@@ -3,6 +3,7 @@ package downloader
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
+	"golang.org/x/time/rate"
 
 	"tg-dlp/pkg/fsutil"
 	"tg-dlp/pkg/progress"
@@ -35,16 +37,13 @@ func New() *Downloader {
 	return &Downloader{
 		Inner: downloader.NewDownloader(),
 		Options: Options{
-			Concurrency: 3,
+			Concurrency: 0, // 0 ကို Default ထားမယ် (Auto သုံးဖို့)
 		},
 	}
 }
 
 // NewWithConfig creates a downloader with custom configuration options.
 func NewWithConfig(opts Options) *Downloader {
-	if opts.Concurrency <= 0 {
-		opts.Concurrency = 3
-	}
 	return &Downloader{
 		Inner:   downloader.NewDownloader(),
 		Options: opts,
@@ -120,16 +119,61 @@ func BestThreads(size int64) int {
 	return 16
 }
 
+// ⭐ Rate Limit လုပ်ပေးတဲ့ WriterAt wrapper (Chunk ခွဲပြီး ရေးတယ်) ⭐
+type rateLimitedWriterAt struct {
+	w       io.WriterAt
+	limiter *rate.Limiter
+	ctx     context.Context
+}
+
+func (r *rateLimitedWriterAt) WriteAt(p []byte, off int64) (int, error) {
+	totalWritten := 0
+	chunkSize := 32 * 1024 // 32KB စီ ခွဲပြီး ရေးမယ် (Error မတက်အောင်)
+
+	for totalWritten < len(p) {
+		end := totalWritten + chunkSize
+		if end > len(p) {
+			end = len(p)
+		}
+		chunk := p[totalWritten:end]
+
+		// Rate Limiter နဲ့ အရှိန်ထိန်းမယ်
+		if err := r.limiter.WaitN(r.ctx, len(chunk)); err != nil {
+			return totalWritten, err
+		}
+
+		// ဖိုင်ထဲကို ရေးမယ်
+		n, err := r.w.WriteAt(chunk, off+int64(totalWritten))
+		totalWritten += n
+		if err != nil {
+			return totalWritten, err
+		}
+	}
+	return totalWritten, nil
+}
+
 // ⭐ Parallel Download နဲ့ Auto-Resume လုပ်ပေးမယ့် Function ⭐
-func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64) error {
+func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64, limitRate int64, concurrency int) error {
 	backoff := 2 * time.Second
 	attempt := 1
 
-	// ⭐ ဖိုင်အရွယ်အစားအလိုက် သင့်လျော်တဲ့ Thread ကို တွက်ချက်မယ် ⭐
-	threads := BestThreads(expectedSize)
+	// ⭐ Concurrency ကို စစ်ဆေးခြင်း (0 ထက်ကြီးရင် User ပေးတာကို သုံးမယ်၊ မဟုတ်ရင် Auto သုံးမယ်) ⭐
+	threads := concurrency
+	if threads <= 0 {
+		threads = BestThreads(expectedSize)
+	}
+
+	// ⭐ Rate Limiter ကို ဖန်တီးမယ် (Burst Size ကို 1MB ထားမယ်) ⭐
+	var limiter *rate.Limiter
+	if limitRate > 0 {
+		burst := int(limitRate)
+		if burst < 1024*1024 {
+			burst = 1024 * 1024 // အနည်းဆုံး 1MB လက်ခံမယ်
+		}
+		limiter = rate.NewLimiter(rate.Limit(limitRate), burst)
+	}
 
 	for {
-		// ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ်
 		if expectedSize > 0 {
 			if info, err := w.File().Stat(); err == nil {
 				if info.Size() >= expectedSize {
@@ -138,8 +182,18 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 			}
 		}
 
-		// ⭐ ဒီနေရာမှာ .Parallel() ကိုပဲ သုံးထားပါတယ်။ Thread 1 ဖြစ်ရင်လည်း .Parallel() ပဲ အလုပ်လုပ်ပါတယ်။ ⭐
-		_, err := dl.Download(api, loc).WithThreads(threads).Parallel(ctx, w)
+		builder := dl.Download(api, loc).WithThreads(threads)
+
+		var outputWriter io.WriterAt = w
+		if limiter != nil {
+			outputWriter = &rateLimitedWriterAt{
+				w:       w,
+				limiter: limiter,
+				ctx:     ctx,
+			}
+		}
+
+		_, err := builder.Parallel(ctx, outputWriter)
 		if err == nil {
 			return nil
 		}
@@ -275,7 +329,7 @@ func (d *Downloader) downloadDocument(ctx context.Context, api *tg.Client, media
 	startTime := time.Now()
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size, d.Options.LimitRate, d.Options.Concurrency); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
@@ -315,7 +369,7 @@ func (d *Downloader) downloadDocumentQuiet(ctx context.Context, api *tg.Client, 
 
 	loc := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 	pw := progress.New(file, doc.Size, offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, doc.Size, d.Options.LimitRate, d.Options.Concurrency); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
 	file.Close()
@@ -364,7 +418,7 @@ func (d *Downloader) downloadPhoto(ctx context.Context, api *tg.Client, media *t
 
 	startTime := time.Now()
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size), d.Options.LimitRate, d.Options.Concurrency); err != nil {
 		return false, fmt.Errorf("download error: %w", err)
 	}
 	fmt.Println()
@@ -415,7 +469,7 @@ func (d *Downloader) downloadPhotoQuiet(ctx context.Context, api *tg.Client, med
 	defer file.Close()
 
 	pw := progress.New(file, int64(size), offset)
-	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size)); err != nil {
+	if err := streamWithRetry(ctx, api, d.Inner, loc, pw, offset, int64(size), d.Options.LimitRate, d.Options.Concurrency); err != nil {
 		return false, "", fmt.Errorf("download error: %w", err)
 	}
 	file.Close()

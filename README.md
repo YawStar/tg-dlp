@@ -190,6 +190,8 @@ These flags work with **all** commands.
 - `--skip-same`: Skip downloading if the file exists and matches size.
 - `--overwrite`: Overwrite existing files.
 - `--dry-run`: List what would be downloaded without downloading.
+- `--concurrency`: Number of concurrent workers for downloading (Default: 3).
+- `-r, --limit-rate`: Download speed limit (e.g., 500K, 1M).
 
 ### `upload` (`up`)
 

@@ -44,6 +44,15 @@ func Run() {
 		PrintHelp()
 		return
 	}
+
+	// ⭐ --update ဒါမှမဟုတ် -U ပါရင် Update စစ်ပြီး ထွက်သွားမယ် ⭐
+	for _, arg := range os.Args[1:] {
+		if arg == "--update" || arg == "-U" {
+			runtime.CheckForUpdates()
+			return
+		}
+	}
+
 	command := strings.ToLower(os.Args[1])
 
 	switch command {

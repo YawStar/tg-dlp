@@ -81,8 +81,8 @@ Options:
 	noProxyPtr := dlCmd.Bool("no-proxy", false, "Do not use system proxy")
 
 	// Concurrency flag addition
-	concurrencyPtr := dlCmd.Int("concurrency", 3, "Number of concurrent workers for downloading")
-	dlCmd.IntVar(concurrencyPtr, "c", 3, "Number of concurrent workers for downloading")
+	concurrencyPtr := dlCmd.Int("concurrency", 0, "Number of concurrent workers for downloading")
+	dlCmd.IntVar(concurrencyPtr, "c", 0, "Number of concurrent workers for downloading")
 
 	// Limit Rate flag addition
 	limitRatePtr := dlCmd.String("limit-rate", "", "Download speed limit (e.g., 500K, 1M)")
