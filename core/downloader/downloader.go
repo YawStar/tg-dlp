@@ -66,7 +66,6 @@ func generateFilename(templateStr string, msgID int, ext string) string {
 }
 
 // ---------- Output path helpers ----------
-
 func resolveOutputPaths(outputDir, safeName string, overwrite, skipSame bool, expectedSize int64) (outputPath, partPath string, skip bool) {
 	if overwrite {
 		outputPath = filepath.Join(outputDir, safeName)
@@ -105,13 +104,26 @@ func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 	return file, 0, nil
 }
 
-// ⭐ Parallel Download နဲ့ Auto-Resume လုပ်ပေးမယ့် Function ⭐
+func BestThreads(size int64) int {
+	if size < 1024*1024 {
+		return 1
+	}
+	if size < 5*1024*1024 {
+		return 4
+	}
+	if size < 20*1024*1024 {
+		return 8
+	}
+	return 16
+}
+
 func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64) error {
-	backoff := 1 * time.Second
+	backoff := 2 * time.Second
 	attempt := 1
 
+	threads := BestThreads(expectedSize)
+
 	for {
-		// ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ်
 		if expectedSize > 0 {
 			if info, err := w.File().Stat(); err == nil {
 				if info.Size() >= expectedSize {
@@ -120,8 +132,7 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 			}
 		}
 
-		// ⭐ Parallel ကို သုံးပြီး အပြိုင်ဆွဲချမယ် ⭐
-		_, err := dl.Download(api, loc).WithThreads(16).Parallel(ctx, w)
+		_, err := dl.Download(api, loc).WithThreads(threads).Parallel(ctx, w)
 		if err == nil {
 			return nil
 		}
@@ -134,6 +145,8 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 		isNetworkError := strings.Contains(errStr, "timeout") ||
 			strings.Contains(errStr, "deadline exceeded") ||
 			strings.Contains(errStr, "-503") ||
+			strings.Contains(errStr, "-500") ||
+			strings.Contains(errStr, "no workers running") ||
 			strings.Contains(errStr, "connection reset") ||
 			strings.Contains(errStr, "eof") ||
 			strings.Contains(errStr, "broken pipe") ||
@@ -151,7 +164,7 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 				}
 			}
 
-			fmt.Printf("\n⚠ Network dropped at %s/%s. Retrying (attempt %d) in %v...\n",
+			fmt.Printf("\n⚠ Network/Worker error at %s/%s. Retrying (attempt %d) in %v...\n",
 				progress.FormatSize(w.Current()),
 				progress.FormatSize(w.Total()),
 				attempt, backoff)
@@ -161,7 +174,7 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 				return ctx.Err()
 			case <-time.After(backoff):
 			}
-			if backoff < 10*time.Second {
+			if backoff < 30*time.Second {
 				backoff *= 2
 			}
 			fmt.Print("\033[2K\r")
@@ -199,7 +212,6 @@ func photoMatches(filterExts []string) bool {
 }
 
 // ---------- SingleMedia ----------
-
 func (d *Downloader) SingleMedia(ctx context.Context, api *tg.Client, msg *tg.Message, msgID int, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string) (bool, error) {
 	if msg.Media == nil {
 		return false, nil
@@ -227,7 +239,6 @@ func (d *Downloader) SingleMediaQuiet(ctx context.Context, api *tg.Client, msg *
 }
 
 // ---------- Document download ----------
-
 func (d *Downloader) downloadDocument(ctx context.Context, api *tg.Client, media *tg.MessageMediaDocument, msgID int, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string, verbose bool) (bool, error) {
 	doc, ok := media.Document.AsNotEmpty()
 	if !ok {
@@ -305,7 +316,6 @@ func (d *Downloader) downloadDocumentQuiet(ctx context.Context, api *tg.Client, 
 }
 
 // ---------- Photo download ----------
-
 func (d *Downloader) downloadPhoto(ctx context.Context, api *tg.Client, media *tg.MessageMediaPhoto, msgID int, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string, verbose bool) (bool, error) {
 	photo, ok := media.Photo.AsNotEmpty()
 	if !ok {
@@ -405,7 +415,6 @@ func (d *Downloader) downloadPhotoQuiet(ctx context.Context, api *tg.Client, med
 }
 
 // ---------- Bulk download ----------
-
 const CheckpointFileName = ".tg-dlp_checkpoint"
 
 func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetChannel *tg.InputChannel, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string) error {
@@ -446,7 +455,7 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 	totalDownloaded, totalFailed := 0, 0
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 3)
+	sem := make(chan struct{}, 10) // ⭐ Bulk ဖြစ်လို့ File ၂ ခုပဲ တစ်ပြိုင်နက်ဆွဲမယ် ⭐
 	var mu sync.Mutex
 
 	for {
@@ -530,7 +539,7 @@ func (d *Downloader) ThreadMedia(ctx context.Context, api *tg.Client, targetChan
 	limit := 100
 	totalDownloaded, totalFailed, totalScanned := 0, 0, 0
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 3)
+	sem := make(chan struct{}, 10) // ⭐ Bulk ဖြစ်လို့ File ၂ ခုပဲ တစ်ပြိုင်နက်ဆွဲမယ် ⭐
 	var mu sync.Mutex
 
 	for {
