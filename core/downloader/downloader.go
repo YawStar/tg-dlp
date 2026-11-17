@@ -66,6 +66,7 @@ func generateFilename(templateStr string, msgID int, ext string) string {
 }
 
 // ---------- Output path helpers ----------
+
 func resolveOutputPaths(outputDir, safeName string, overwrite, skipSame bool, expectedSize int64) (outputPath, partPath string, skip bool) {
 	if overwrite {
 		outputPath = filepath.Join(outputDir, safeName)
@@ -104,7 +105,9 @@ func openPartFile(partPath string, verbose bool) (*os.File, int64, error) {
 	return file, 0, nil
 }
 
+// ⭐ BestThreads က ဖိုင်အရွယ်အစားအပေါ် မူတည်ပြီး သင့်လျော်တဲ့ Thread အရေအတွက်ကို ပြန်ပေးပါတယ် ⭐
 func BestThreads(size int64) int {
+	// 1 MB အောက် ဖိုင်သေးသေးလေးတွေအတွက် Thread 1 ပဲပေးမယ် (Hang မဖြစ်အောင်)
 	if size < 1024*1024 {
 		return 1
 	}
@@ -117,13 +120,16 @@ func BestThreads(size int64) int {
 	return 16
 }
 
+// ⭐ Parallel Download နဲ့ Auto-Resume လုပ်ပေးမယ့် Function ⭐
 func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloader, loc tg.InputFileLocationClass, w *progress.Writer, offset int64, expectedSize int64) error {
 	backoff := 2 * time.Second
 	attempt := 1
 
+	// ⭐ ဖိုင်အရွယ်အစားအလိုက် သင့်လျော်တဲ့ Thread ကို တွက်ချက်မယ် ⭐
 	threads := BestThreads(expectedSize)
 
 	for {
+		// ဖိုင်အရွယ်အစား ပြည့်သွားပြီလား အရင်စစ်မယ်
 		if expectedSize > 0 {
 			if info, err := w.File().Stat(); err == nil {
 				if info.Size() >= expectedSize {
@@ -132,6 +138,7 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 			}
 		}
 
+		// ⭐ ဒီနေရာမှာ .Parallel() ကိုပဲ သုံးထားပါတယ်။ Thread 1 ဖြစ်ရင်လည်း .Parallel() ပဲ အလုပ်လုပ်ပါတယ်။ ⭐
 		_, err := dl.Download(api, loc).WithThreads(threads).Parallel(ctx, w)
 		if err == nil {
 			return nil
@@ -153,7 +160,8 @@ func streamWithRetry(ctx context.Context, api *tg.Client, dl *downloader.Downloa
 			strings.Contains(errStr, "connection refused") ||
 			strings.Contains(errStr, "no route to host") ||
 			strings.Contains(errStr, "i/o timeout") ||
-			strings.Contains(errStr, "transport is closing")
+			strings.Contains(errStr, "transport is closing") ||
+			strings.Contains(errStr, "context canceled")
 
 		if isNetworkError {
 			if expectedSize > 0 {
@@ -212,6 +220,7 @@ func photoMatches(filterExts []string) bool {
 }
 
 // ---------- SingleMedia ----------
+
 func (d *Downloader) SingleMedia(ctx context.Context, api *tg.Client, msg *tg.Message, msgID int, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string) (bool, error) {
 	if msg.Media == nil {
 		return false, nil
@@ -239,6 +248,7 @@ func (d *Downloader) SingleMediaQuiet(ctx context.Context, api *tg.Client, msg *
 }
 
 // ---------- Document download ----------
+
 func (d *Downloader) downloadDocument(ctx context.Context, api *tg.Client, media *tg.MessageMediaDocument, msgID int, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string, verbose bool) (bool, error) {
 	doc, ok := media.Document.AsNotEmpty()
 	if !ok {
@@ -316,6 +326,7 @@ func (d *Downloader) downloadDocumentQuiet(ctx context.Context, api *tg.Client, 
 }
 
 // ---------- Photo download ----------
+
 func (d *Downloader) downloadPhoto(ctx context.Context, api *tg.Client, media *tg.MessageMediaPhoto, msgID int, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string, verbose bool) (bool, error) {
 	photo, ok := media.Photo.AsNotEmpty()
 	if !ok {
@@ -415,6 +426,7 @@ func (d *Downloader) downloadPhotoQuiet(ctx context.Context, api *tg.Client, med
 }
 
 // ---------- Bulk download ----------
+
 const CheckpointFileName = ".tg-dlp_checkpoint"
 
 func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetChannel *tg.InputChannel, outputDir string, filterExts []string, skipSame, overwrite bool, templateStr string) error {
@@ -455,7 +467,7 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 	totalDownloaded, totalFailed := 0, 0
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10) // ⭐ Bulk ဖြစ်လို့ File ၂ ခုပဲ တစ်ပြိုင်နက်ဆွဲမယ် ⭐
+	sem := make(chan struct{}, 1) // Bulk ဖြစ်လို့ File ၁ ခုပဲ Download ဆွဲ (ပိုတည်ငြိမ်)
 	var mu sync.Mutex
 
 	for {
@@ -496,6 +508,16 @@ func (d *Downloader) ChannelMedia(ctx context.Context, api *tg.Client, targetCha
 				defer func() { <-sem }()
 
 				downloaded, skipReason, err := d.SingleMediaQuiet(ctx, api, msg, msg.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
+				
+				var pct float64
+				if totalMedia > 0 {
+					pct = float64(totalScanned) / float64(totalMedia) * 100
+					if pct > 100 {
+						pct = 100
+					}
+				}
+				fmt.Printf("\r[Progress: %d/%d | %.2f%%] ", totalScanned, totalMedia, pct)
+
 				if err != nil {
 					fmt.Printf("\n⚠ Error: %v\n", err)
 					mu.Lock()
@@ -539,7 +561,7 @@ func (d *Downloader) ThreadMedia(ctx context.Context, api *tg.Client, targetChan
 	limit := 100
 	totalDownloaded, totalFailed, totalScanned := 0, 0, 0
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10) // ⭐ Bulk ဖြစ်လို့ File ၂ ခုပဲ တစ်ပြိုင်နက်ဆွဲမယ် ⭐
+	sem := make(chan struct{}, 1) // Bulk ဖြစ်လို့ File ၁ ခုပဲ Download ဆွဲ (ပိုတည်ငြိမ်)
 	var mu sync.Mutex
 
 	for {
@@ -582,6 +604,16 @@ func (d *Downloader) ThreadMedia(ctx context.Context, api *tg.Client, targetChan
 				defer func() { <-sem }()
 
 				downloaded, skipReason, err := d.SingleMediaQuiet(ctx, api, msg, msg.ID, outputDir, filterExts, skipSame, overwrite, templateStr)
+				
+				var pct float64
+				if totalReplies > 0 {
+					pct = float64(totalScanned) / float64(totalReplies) * 100
+					if pct > 100 {
+						pct = 100
+					}
+				}
+				fmt.Printf("\r[Thread Progress: %d/%d | %.2f%%] ", totalScanned, totalReplies, pct)
+
 				if err != nil {
 					fmt.Printf("\n⚠ Error: %v\n", err)
 					mu.Lock()
