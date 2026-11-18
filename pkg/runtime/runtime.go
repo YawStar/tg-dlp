@@ -4,7 +4,7 @@ import "fmt"
 
 // Build metadata — set via -ldflags
 var (
-	Version   = "0.1.0"
+	Version   = ""
 	Commit    = "none"  
 	BuildTime = "unknown"
 )
