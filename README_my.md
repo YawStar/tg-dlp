@@ -112,34 +112,37 @@ tg-dlp help
 # 2. Login ဝင်ရန် (ပထမဆုံးအကြိမ်သာ - API ID/Hash နှင့် ဖုန်းနံပါတ် တောင်းပါမည်)
 tg-dlp login
 
-# 3. Post တစ်ခုတည်းကို ဒေါင်းလုဒ်ဆွဲရန်
+# 3. မှတ်ထားတဲ့ Password ကို ဘယ်လောက်ကြာကြာ မှတ်ထားမလဲကို ပြင်ဆင်ရန်
+tg-dlp config-cache
+
+# 4. Post တစ်ခုတည်းကို ဒေါင်းလုဒ်ဆွဲရန်
 tg-dlp dl -u https://t.me/channel/123
 
-# 4. Channel တစ်ခုလုံးကို ဒေါင်းလုဒ်ဆွဲရန် (Filter သုံးပြီး ထပ်နေတာတွေ ကျော်ရန်)
+# 5. Channel တစ်ခုလုံးကို ဒေါင်းလုဒ်ဆွဲရန် (Filter သုံးပြီး ထပ်နေတာတွေ ကျော်ရန်)
 tg-dlp dl -u https://t.me/channel -i mp4,mkv --skip-same
 
-# 5. ဒေါင်းလုဒ်ဆွဲရန် (Concurrency သတ်မှတ်ပြီး Download လုပ်ရန်)
+# 6. ဒေါင်းလုဒ်ဆွဲရန် (Concurrency သတ်မှတ်ပြီး Download လုပ်ရန်)
 tg-dlp dl -u https://t.me/channel  -concurrency 5
 
-# 6. ဒေါင်းလုဒ်ဆွဲရန် (Bandwidth ကိုအပြည့်မသုံးပဲ Speed Limit နဲ့ Download လုပ်ရန်)
+# 7. ဒေါင်းလုဒ်ဆွဲရန် (Bandwidth ကိုအပြည့်မသုံးပဲ Speed Limit နဲ့ Download လုပ်ရန်)
 tg-dlp dl -u https://t.me/channel -r 2.5M
 
-# 7. Channel ရဲ့ မက်ဆေ့ချ်တွေကို JSON အဖြစ် ထုတ်ယူရန် (မက်ဆေ့ချ် ၅၀၀ အထိ)
+# 8. Channel ရဲ့ မက်ဆေ့ချ်တွေကို JSON အဖြစ် ထုတ်ယူရန် (မက်ဆေ့ချ် ၅၀၀ အထိ)
 tg-dlp export -u https://t.me/channel/123 -l 500
 
-# 8. ထုတ်ယူထားတဲ့ ဖိုင်တွေကို ZIP တစ်ခုတည်းအဖြစ် ချုံ့ရန်
+# 9. ထုတ်ယူထားတဲ့ ဖိုင်တွေကို ZIP တစ်ခုတည်းအဖြစ် ချုံ့ရန်
 tg-dlp backup -d exports -o my_backup.zip
 
-# 9. မက်ဆေ့ချ်တွေကို Saved Messages ဆီ ပြန်ပို့ရန် (သို့) သီးသန့် Channel ဆီ ပို့ရန်
+# 10. မက်ဆေ့ချ်တွေကို Saved Messages ဆီ ပြန်ပို့ရန် (သို့) သီးသန့် Channel ဆီ ပို့ရန်
 tg-dlp restore -f exports/export_123.json -c me
 
-# 10. Folder တစ်ခုကို တင်ပြီး အောင်မြင်ရင် ဒေသတွင်းဖိုင်တွေ ဖျက်ရန်
+# 11. Folder တစ်ခုကို တင်ပြီး အောင်မြင်ရင် ဒေသတွင်းဖိုင်တွေ ဖျက်ရန်
 tg-dlp up -p ./videos -c @mychannel --rm
 
-# 11. Channel ထဲက စာသားမက်ဆေ့ချ်တွေကို ရှင်းလင်းရန်
+# 12. Channel ထဲက စာသားမက်ဆေ့ချ်တွေကို ရှင်းလင်းရန်
 tg-dlp purge -c @mychannel --text -y
 
-# 12. ပြဿနာတစ်ခုခုအတွက် Debug လုပ်ရန်
+# 13. ပြဿနာတစ်ခုခုအတွက် Debug လုပ်ရန်
 tg-dlp dl -u https://t.me/channel/123 --debug
 ```
 

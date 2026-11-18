@@ -112,34 +112,37 @@ tg-dlp help
 # 2. Login (First time only - prompts for API ID/Hash and phone)
 tg-dlp login
 
-# 3. Download a single post
+# 3. Change how long the session password is remembered
+tg-dlp config-cache
+
+# 4. Download a single post
 tg-dlp dl -u https://t.me/channel/123
 
-# 4. Download an entire channel (filtered and skip duplicates)
+# 5. Download an entire channel (filtered and skip duplicates)
 tg-dlp dl -u https://t.me/channel -i mp4,mkv --skip-same
 
-# 5. Number of concurrent workers for downloading (Default: 3)
+# 6. Number of concurrent workers for downloading (Default: 3)
 tg-dlp dl -u https://t.me/channel -concurrency 5
 
-# 6. Download speed limit (e.g., 500K, 1M)
+# 7. Download speed limit (e.g., 500K, 1M)
 tg-dlp dl -u https://t.me/channel -r 2.5M
 
-# 7. Export a channel's messages to JSON (Limit 500 messages)
+# 8. Export a channel's messages to JSON (Limit 500 messages)
 tg-dlp export -u https://t.me/channel/123 -l 500
 
-# 8. Backup the exported files into a single ZIP
+# 9. Backup the exported files into a single ZIP
 tg-dlp backup -d exports -o my_backup.zip
 
-# 9. Restore the messages to Saved Messages (or a specific channel)
+# 10. Restore the messages to Saved Messages (or a specific channel)
 tg-dlp restore -f exports/export_123.json -c me
 
-# 10. Upload a directory and delete local files after success
+# 11. Upload a directory and delete local files after success
 tg-dlp up -p ./videos -c @mychannel --rm
 
-# 11. Purge text messages from a channel
+# 12. Purge text messages from a channel
 tg-dlp purge -c @mychannel --text -y
 
-# 12. Debugging an issue
+# 13. Debugging an issue
 tg-dlp dl -u https://t.me/channel/123 --debug
 ```
 
